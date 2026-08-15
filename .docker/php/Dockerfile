@@ -10,10 +10,11 @@ RUN apt-get update && apt-get install -y \
     git \
     curl \
     libonig-dev \
-    libxml2-dev
+    libxml2-dev \
+    libpq-dev
 
 # Install extensions
-RUN docker-php-ext-install pdo_mysql mbstring exif pcntl bcmath gd
+RUN docker-php-ext-install pdo_mysql pdo_pgsql mbstring exif pcntl bcmath gd
 
 # Get Composer
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer

@@ -33,6 +33,22 @@ services:
     networks:
       - app-network
 
+  postgres:
+    image: postgres:15-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: manipulate_data
+      POSTGRES_USER: root
+      POSTGRES_PASSWORD: rootpassword
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    networks:
+      - app-network
+
 networks:
   app-network:
     driver: bridge
+
+volumes:
+  db-data:
