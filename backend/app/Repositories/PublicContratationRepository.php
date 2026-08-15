@@ -1,0 +1,45 @@
+<?php
+
+namespace App\Repositories;
+
+use App\DTOs\PublicContratations\GetPublicContratationsDTO;
+use App\Models\PublicContratation;
+use Illuminate\Database\Eloquent\Collection;
+
+class PublicContratationRepository
+{
+    /**
+     * Consulta apenas o banco de dados local usando os filtros passados.
+     * Como a tabela crescerá muito, é vital usar os índices adequadamente.
+     */
+    public function getByFilters(GetPublicContratationsDTO $dto): Collection
+    {
+        $query = PublicContratation::query()
+            ->when($dto->dataInicial && $dto->dataFinal, function ($query) use ($dto) {
+                $query->whereBetween('data_publicacao_pncp', [
+                    $this->formatDate($dto->dataInicial, '00:00:00'),
+                    $this->formatDate($dto->dataFinal, '23:59:59')
+                ]);
+            })
+            ->when($dto->uf, fn($query, $uf) => $query->where('uf', $uf))
+            ->when($dto->codigoMunicipioIbge, fn($query, $ibge) => $query->where('codigo_municipio_ibge', $ibge))
+            ->when($dto->codigoModalidadeContratacao, fn($query, $modalidade) => $query->where('codigo_modalidade_contratacao', $modalidade));
+
+        // Simulação de paginação ou limites (no modelo final deve-se usar ->paginate())
+        $limit  = $dto->tamanhoPagina ? (int) $dto->tamanhoPagina : 15;
+        $offset = $dto->pagina        ? ((int) $dto->pagina - 1) * $limit : 0;
+
+        return $query->skip($offset)->take($limit)->get();
+    }
+
+    private function formatDate(string $dateString, string $time): string
+    {
+        // Converte de Ymd para Y-m-d H:i:s
+        // Ex: 20260101 -> 2026-01-01 00:00:00
+        $year  = substr($dateString, 0, 4);
+        $month = substr($dateString, 4, 2);
+        $day   = substr($dateString, 6, 2);
+
+        return "{$year}-{$month}-{$day} {$time}";
+    }
+}
