@@ -3,6 +3,11 @@
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 
+use Illuminate\Support\Facades\Schedule;
+
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');
+
+// Configura o Job de Sincronização para rodar todos os dias à meia-noite
+Schedule::command('pncp:sync')->dailyAt('02:00');
