@@ -19,7 +19,12 @@ class ProcessPncpPageJob implements ShouldQueue
     // Tempo de tolerância generoso, mas como é só uma página, vai rodar em segundos
     public $timeout = 120;
 
+    // Se a API do governo cair, ele tenta rodar esse job até 5 vezes
     public $tries = 5;
+
+    // Se o Job falhar (ex: Too Many Requests), ele não tenta de novo na mesma hora.
+    // Ele vai esperar 60s na 1ª falha, 120s na 2ª, e 5 minutos nas seguintes.
+    public $backoff = [60, 120, 300];
 
     /**
      * Create a new job instance.
