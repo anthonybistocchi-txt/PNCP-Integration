@@ -15,9 +15,12 @@ return new class extends Migration
             $table->id();
             $table->string('name');
             $table->string('email')->unique();
-            $table->timestamp('email_verified_at')->nullable();
             $table->string('password');
-            $table->rememberToken();
+            $table->string('cpf')->unique()->nullable();
+            $table->string('cnpj')->unique()->nullable();
+            $table->string('company_name')->nullable();
+            $table->uuid('api_key')->unique()->index();
+            $table->boolean('is_active')->default(true);
             $table->timestamps();
         });
 
