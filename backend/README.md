@@ -1,10 +1,10 @@
-# Universal Data Explorer - Backend
+# PNCP Integration - Backend
 
-Este é o backend da aplicação **Universal Data Explorer**, responsável por fornecer uma API de alta performance para consulta de licitações e contratos públicos, com sincronização assíncrona da API do Portal Nacional de Contratações Públicas (PNCP).
+Este é o backend da aplicação **PNCP Integration**, responsável por fornecer uma API de alta performance para consulta de licitações e contratos públicos, com sincronização assíncrona da API do Portal Nacional de Contratações Públicas (PNCP).
 
 ## 🏛️ Arquitetura
 
-A aplicação foi desenhada com foco em **Alta Escalabilidade**, **Clean Code** e **Single Responsibility Principle (SRP)**. O sistema é dividido em dois fluxos isolados que não interferem um no outro:
+O sistema é dividido em dois fluxos isolados que não interferem um no outro:
 
 ### 1. Fluxo de Leitura (Síncrono/Frontend)
 Focado em latência ultrabaixa (< 20ms). 
