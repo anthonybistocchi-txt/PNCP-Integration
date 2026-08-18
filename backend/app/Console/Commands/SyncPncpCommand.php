@@ -31,10 +31,11 @@ class SyncPncpCommand extends Command
     {
         $this->info('Iniciando disparo do Job de Sincronização do PNCP...');
 
-        $dataInicial = now()->subDays(1)->startOfDay()->format('Ymd');
-        $dataFinal   = now()->subDays(1)->endOfDay()->format('Ymd');
+        $dataInicial = now()->yesterday()->format('Ymd');
+        $dataFinal   = now()->yesterday()->format('Ymd');
 
-        foreach ($this->modalidadeId as $modalidade) {
+        foreach ($this->modalidadeId as $modalidade) 
+        {
             $dto = new GetPublicContratationsDTO(
                 dataInicial: $dataInicial,
                 dataFinal: $dataFinal,

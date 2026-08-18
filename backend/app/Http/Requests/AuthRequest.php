@@ -36,12 +36,12 @@ class AuthRequest extends FormRequest
     public function toDTO(): AuthDTO
     {
         return new AuthDTO(
-            name: $this->name,
-            email: $this->email,
+            name:        $this->name,
+            email:       $this->email,
             companyName: $this->company_name,
-            cpf: $this->cpf,
-            cnpj: $this->cnpj,
-            password: $this->password,
+            cpf:         $this->cpf,
+            cnpj:        $this->cnpj,
+            password:    $this->password,
         );
     }
 

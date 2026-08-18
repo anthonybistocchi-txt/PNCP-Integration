@@ -18,7 +18,8 @@ class AuthMiddleware
     {
         $token = $request->bearerToken() ?? $request->header('API_KEY') ?? $request->header('Authorization');
         
-        if (!$token) {
+        if (!$token) 
+        {
             return response()->json([
                 'error' => 'API KEY não fornecida',
             ], 401);
@@ -29,7 +30,8 @@ class AuthMiddleware
 
         $user = User::where('api_key', $token)->first();
 
-        if (!$user) {
+        if (!$user) 
+        {
             return response()->json([
                 'error' => 'API KEY inválida',
             ], 401);

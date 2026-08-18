@@ -26,11 +26,13 @@ class PncpClient
             ])
             ->get($url, $queryParams);
 
-        if ($response->successful()) {
+        if ($response->successful()) 
+        {
             return json_decode($response->body());
         }
 
-        if ($response->status() === 429) {
+        if ($response->status() === 429) 
+        {
             $response->throw();
         }
 
@@ -51,13 +53,15 @@ class PncpClient
             ])
             ->get($this->baseUrlDocumentos . "/{$cnpj}/compras/{$ano}/{$sequencial}/arquivos");
 
-        if ($response->successful()) {
+        if ($response->successful()) 
+        {
             $arquivos = json_decode($response->body(), true);
             // Retorna array de arquivos ou vazio se não houver
             return is_array($arquivos) ? $arquivos : [];
         }
 
-        if ($response->status() === 429) {
+        if ($response->status() === 429) 
+        {
             $response->throw();
         }
 

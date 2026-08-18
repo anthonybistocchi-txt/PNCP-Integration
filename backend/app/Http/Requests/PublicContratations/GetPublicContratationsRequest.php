@@ -24,11 +24,11 @@ class GetPublicContratationsRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'dataInicial'                 => 'required|date_format:Ymd|before_or_equal:dataFinal',
-            'dataFinal'                   => 'required|date_format:Ymd|after_or_equal:dataInicial',
-            'codigoModalidadeContratacao' => 'required|integer',
-            'uf'                          => 'nullable|string|max:2',
-            'codigoMunicipioIbge'         => 'nullable|integer',
+            'dataInicial'                       => 'required|date_format:Ymd|before_or_equal:dataFinal',
+            'dataFinal'                         => 'required|date_format:Ymd|after_or_equal:dataInicial',
+            'codigoModalidadeContratacao'       => 'required|integer',
+            'uf'                                => 'nullable|string|max:2',
+            'codigoMunicipioIbge'               => 'nullable|integer',
             'pagina'                            => 'nullable|integer',
             'tamanhoPagina'                     => 'nullable|integer',
             'poderId'                           => 'nullable|string|max:2',
@@ -44,13 +44,13 @@ class GetPublicContratationsRequest extends FormRequest
     public function toDTO(): GetPublicContratationsDTO
     {
         return new GetPublicContratationsDTO(
-            dataInicial: $this->validated('dataInicial'),
-            dataFinal: $this->validated('dataFinal'),
+            dataInicial:                 $this->validated('dataInicial'),
+            dataFinal:                   $this->validated('dataFinal'),
             codigoModalidadeContratacao: $this->validated('codigoModalidadeContratacao'),
-            uf: strtoupper($this->validated('uf')),
-            codigoMunicipioIbge: $this->validated('codigoMunicipioIbge'),
-            pagina: $this->validated('pagina'),
-            tamanhoPagina: $this->validated('tamanhoPagina'),
+            uf:                          strtoupper($this->validated('uf')),
+            codigoMunicipioIbge:         $this->validated('codigoMunicipioIbge'),
+            pagina:                      $this->validated('pagina'),
+            tamanhoPagina:               $this->validated('tamanhoPagina'),
         );
     }
 

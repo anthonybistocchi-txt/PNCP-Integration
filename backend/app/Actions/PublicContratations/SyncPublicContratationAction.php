@@ -12,23 +12,27 @@ class SyncPublicContratationAction
      */
     public function handle(array $pncpItems): void
     {
-        if (empty($pncpItems)) {
+        if (empty($pncpItems)) 
+        {
             return;
         }
 
         $upsertData = [];
 
-        foreach ($pncpItems as $pncpItem) {
+        foreach ($pncpItems as $pncpItem) 
+        {
             $numeroControle = $pncpItem->numeroControlePNCP ?? null;
 
-            if (!$numeroControle) {
+            if (!$numeroControle) 
+            {
                 continue;
             }
 
             $upsertData[] = $this->mapData($pncpItem);
         }
 
-        if (empty($upsertData)) {
+        if (empty($upsertData)) 
+        {
             return;
         }
 
