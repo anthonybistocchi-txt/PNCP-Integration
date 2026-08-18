@@ -20,6 +20,7 @@ Focado em alto volume de ingestão de dados.
 - O Command despacha um Job Mestre: `SyncPncpDataJob`.
 - **Padrão Fan-Out**: O Mestre consulta a API do PNCP apenas para descobrir o total de páginas existentes. Em seguida, ele cria e enfileira um operário (`ProcessPncpPageJob`) para *cada página* existente.
 - **Tolerância a Falhas**: Cada operário roda em segundos. Se a rede oscilar, o Laravel isola a página que falhou e tenta novamente (até 5 vezes), sem prejudicar as demais páginas.
+- **Circuit Breaker**: Integrado com Redis, o sistema detecta erros `429 Too Many Requests` (Rate Limit da API do Governo) e imediatamente "abre o disjuntor", devolvendo os Jobs para a fila com uma pausa inteligente de 5 minutos, evitando bloqueios de IP e gasto de CPU.
 - **Bulk Upsert**: O operário baixa 500 licitações por vez e envia para a `SyncPublicContratationAction`. A Action executa um `PublicContratation::upsert()` no Postgres, inserindo e atualizando centenas de registros com apenas uma query SQL de alto desempenho.
 
 ---
@@ -28,6 +29,7 @@ Focado em alto volume de ingestão de dados.
 - **PHP 8.2+**
 - **Laravel 11**
 - **PostgreSQL** (Armazenamento Relacional)
+- **Redis** (Cache em memória de altíssima velocidade para Rate Limiting)
 - **Docker & Docker Compose** (Containerização Completa)
 - **Padrões**: DTOs (Data Transfer Objects), FormRequests, Services, Repositories, Resources, Fan-Out Jobs.
 
@@ -43,11 +45,12 @@ docker-compose up -d
 Isso iniciará:
 - Container do PHP-FPM / Nginx (Backend Laravel)
 - Container do PostgreSQL (Banco de Dados)
+- Container do Redis (Cache/Circuit Breaker)
 
 ### 2. Configurando o Banco de Dados
-Gere a estrutura inicial executando as migrations dentro do container do PHP:
+Gere a estrutura inicial e o seu Usuário Admin (com a `API_KEY` definida no seu `.env`) executando:
 ```bash
-docker-compose exec php php artisan migrate
+docker-compose exec php php artisan migrate --seed
 ```
 
 ### 3. Rodando o Worker da Fila
@@ -80,6 +83,7 @@ Endpoint projetado para suportar buscas complexas enviando o payload via `body` 
   "dataInicial": "20260101",
   "dataFinal": "20260815",
   "codigoModalidadeContratacao": 6,
+  "tipoData": "publicacao", 
   "uf": "SP",
   "codigoMunicipioIbge": 3543402,
   "pagina": 1,
@@ -93,6 +97,10 @@ Endpoint projetado para suportar buscas complexas enviando o payload via `body` 
 }
 ```
 *(Obs: `dataInicial`, `dataFinal` e `codigoModalidadeContratacao` são obrigatórios).*
+
+**Sobre o parâmetro `tipoData`:**
+- `"publicacao"` (Padrão): A busca pelas datas informadas será baseada na data original de publicação do edital.
+- `"atualizacao"`: A busca pelas datas informadas olhará para as licitações que **sofreram alterações** no PNCP nesse intervalo (ex: um edital de janeiro que foi atualizado hoje).
 
 ---
 
