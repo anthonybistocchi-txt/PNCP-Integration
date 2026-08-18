@@ -9,11 +9,11 @@ final class GetPublicContratationsDTO
     public function __construct(
         public readonly string $dataInicial,
         public readonly string $dataFinal,
-        public readonly string $codigoModalidadeContratacao,
+        public readonly int|string $codigoModalidadeContratacao,
         public readonly ?string $uf,
-        public readonly ?string $codigoMunicipioIbge,
-        public readonly ?string $pagina,
-        public readonly ?string $tamanhoPagina,
+        public readonly int|string|null $codigoMunicipioIbge,
+        public readonly int|string|null $pagina,
+        public readonly int|string|null $tamanhoPagina,
     ) {}
 
     public static function fromRequest(GetPublicContratationsRequest $request): self

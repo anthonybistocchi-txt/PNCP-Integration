@@ -21,12 +21,15 @@ return new class extends Migration
             $table->dateTime('data_publicacao_pncp')->index();
             $table->dateTime('data_atualizacao_global');
             $table->string('uf', 2)->nullable()->index();
-            $table->string('codigo_municipio_ibge', 7)->nullable()->index();
-            $table->string('codigo_modalidade_contratacao')->nullable()->index();
+            $table->integer('codigo_municipio_ibge')->nullable()->index();
+            $table->integer('codigo_modalidade_contratacao')->nullable()->index();
             
             // Aqui guardamos todo o JSON da requisição para podermos recuperar
             // e processar no Resource sem ter que criar 50 colunas.
             $table->json('payload_completo');
+            
+            // Lista de arquivos/documentos recuperados do PNCP
+            $table->json('documentos')->nullable();
             
             $table->timestamps();
         });
