@@ -17,14 +17,14 @@ class GetPublicContratationsResource extends JsonResource
         return [
             'numeroControle'         => $this->numero_controle_pncp,
             'processo'               => $payload->processo ?? null,
-            'objetoCompra'           => $payload->objetoCompra ?? null,
-            'valorTotalEstimado'     => $payload->valorTotalEstimado ?? null,
+            'objetoCompra'           => $this->objeto_compra,
+            'valorTotalEstimado'     => $this->valor_total_estimado, // Agora já vem formatado automaticamente pelo Cast
             'valorTotalHomologado'   => $payload->valorTotalHomologado ?? null,
             'detalhesDisputa' => [
                 'modalidade'              => $payload->modalidadeNome ?? null,
                 'modoDisputa'             => $payload->modoDisputaNome ?? null,
                 'instrumentoConvocatorio' => $payload->tipoInstrumentoConvocatorioNome ?? null,
-                'sistemaRegistroPrecos'   => $payload->srp ?? false,
+                'sistemaRegistroPrecos'   => $this->srp,
                 'situacao'                => $payload->situacaoCompraNome ?? null,
             ],
             'amparoLegal'            => $payload->amparoLegal->nome ?? null,
@@ -39,9 +39,9 @@ class GetPublicContratationsResource extends JsonResource
                 'nome'      => $payload->unidadeOrgao->nomeUnidade ?? null,
             ],
             'datas' => [
-                'publicacao'           => clone $this->data_publicacao_pncp,
-                'aberturaProposta'     => $payload->dataAberturaProposta ?? null,
-                'encerramentoProposta' => $payload->dataEncerramentoProposta ?? null,
+                'publicacao'           => $this->data_publicacao_pncp,
+                'aberturaProposta'     => $this->data_abertura_proposta,
+                'encerramentoProposta' => $this->data_encerramento_proposta,
             ],
             'documentos' => $this->documentos ?? [],
             'links' => [

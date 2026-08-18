@@ -37,6 +37,7 @@ class GetPublicContratationsRequest extends FormRequest
             'modoDisputaId'                     => 'nullable|integer',
             'tipoInstrumentoConvocatorioCodigo' => 'nullable|integer',
             'fontesOrcamentarias'               => 'nullable|integer',
+            'tipoData'                          => 'nullable|string|in:publicacao,atualizacao',
         ];
     }
 

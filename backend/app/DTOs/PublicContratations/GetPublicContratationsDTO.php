@@ -20,6 +20,7 @@ final class GetPublicContratationsDTO
         public readonly ?int $modoDisputaId = null,
         public readonly ?int $tipoInstrumentoConvocatorioCodigo = null,
         public readonly ?int $fontesOrcamentarias = null,
+        public readonly string $tipoData = 'publicacao',
     ) {}
 
     public static function fromRequest(GetPublicContratationsRequest $request): self
@@ -38,6 +39,7 @@ final class GetPublicContratationsDTO
             $request->modoDisputaId ?? null,
             $request->tipoInstrumentoConvocatorioCodigo ?? null,
             $request->fontesOrcamentarias ?? null,
+            $request->tipoData ?? 'publicacao',
         );
     }
 }

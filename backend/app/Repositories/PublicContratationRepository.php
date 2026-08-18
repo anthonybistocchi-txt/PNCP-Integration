@@ -16,7 +16,9 @@ class PublicContratationRepository
     {
         $query = PublicContratation::query()
             ->when($dto->dataInicial && $dto->dataFinal, function ($query) use ($dto) {
-                $query->whereBetween('data_publicacao_pncp', [
+                $coluna = $dto->tipoData === 'atualizacao' ? 'data_atualizacao_global' : 'data_publicacao_pncp';
+                
+                $query->whereBetween($coluna, [
                     $this->formatDate($dto->dataInicial, '00:00:00'),
                     $this->formatDate($dto->dataFinal, '23:59:59')
                 ]);
