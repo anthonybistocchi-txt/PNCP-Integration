@@ -21,14 +21,14 @@ class PublicContratationRepository
                     $this->formatDate($dto->dataFinal, '23:59:59')
                 ]);
             })
-            ->when($dto->uf, fn($query, $uf) => $query->where('uf', $uf))
-            ->when($dto->codigoMunicipioIbge, fn($query, $ibge) => $query->where('codigo_municipio_ibge', $ibge))
+            ->when($dto->uf, fn($query, $uf)                                  => $query->where('uf', $uf))
+            ->when($dto->codigoMunicipioIbge, fn($query, $ibge)               => $query->where('codigo_municipio_ibge', $ibge))
             ->when($dto->codigoModalidadeContratacao, fn($query, $modalidade) => $query->where('codigo_modalidade_contratacao', $modalidade))
-            ->when($dto->poderId, fn($query, $val) => $query->where('payload_completo->orgaoEntidade->poderId', $val))
-            ->when($dto->esferaId, fn($query, $val) => $query->where('payload_completo->orgaoEntidade->esferaId', $val))
-            ->when($dto->situacaoCompraId, fn($query, $val) => $query->where('payload_completo->situacaoCompraId', (int) $val))
-            ->when($dto->modoDisputaId, fn($query, $val) => $query->where('payload_completo->modoDisputaId', (int) $val))
-            ->when($dto->tipoInstrumentoConvocatorioCodigo, fn($query, $val) => $query->where('payload_completo->tipoInstrumentoConvocatorioCodigo', (int) $val))
+            ->when($dto->poderId, fn($query, $val)                            => $query->where('payload_completo->orgaoEntidade->poderId', $val))
+            ->when($dto->esferaId, fn($query, $val)                           => $query->where('payload_completo->orgaoEntidade->esferaId', $val))
+            ->when($dto->situacaoCompraId, fn($query, $val)                   => $query->where('payload_completo->situacaoCompraId', (int) $val))
+            ->when($dto->modoDisputaId, fn($query, $val)                      => $query->where('payload_completo->modoDisputaId', (int) $val))
+            ->when($dto->tipoInstrumentoConvocatorioCodigo, fn($query, $val)  => $query->where('payload_completo->tipoInstrumentoConvocatorioCodigo', (int) $val))
             ->when($dto->fontesOrcamentarias, function ($query, $val) {
                 $query->whereJsonContains('payload_completo->fontesOrcamentarias', ['codigo' => (int) $val]);
             });
