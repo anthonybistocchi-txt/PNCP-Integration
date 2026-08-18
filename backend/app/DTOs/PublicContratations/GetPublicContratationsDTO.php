@@ -9,11 +9,17 @@ final class GetPublicContratationsDTO
     public function __construct(
         public readonly string $dataInicial,
         public readonly string $dataFinal,
-        public readonly int|string $codigoModalidadeContratacao,
+        public readonly int $codigoModalidadeContratacao,
         public readonly ?string $uf,
-        public readonly int|string|null $codigoMunicipioIbge,
-        public readonly int|string|null $pagina,
-        public readonly int|string|null $tamanhoPagina,
+        public readonly ?int $codigoMunicipioIbge = null,
+        public readonly ?int $pagina = null,
+        public readonly ?int $tamanhoPagina = null,
+        public readonly ?string $poderId = null,
+        public readonly ?string $esferaId = null,
+        public readonly ?int $situacaoCompraId = null,
+        public readonly ?int $modoDisputaId = null,
+        public readonly ?int $tipoInstrumentoConvocatorioCodigo = null,
+        public readonly ?int $fontesOrcamentarias = null,
     ) {}
 
     public static function fromRequest(GetPublicContratationsRequest $request): self
@@ -23,9 +29,15 @@ final class GetPublicContratationsDTO
             $request->dataFinal,
             $request->codigoModalidadeContratacao,
             $request->uf,
-            $request->codigoMunicipioIbge,
-            $request->pagina,
-            $request->tamanhoPagina,
+            $request->codigoMunicipioIbge ?? null,
+            $request->pagina ?? null,
+            $request->tamanhoPagina ?? null,
+            $request->poderId ?? null,
+            $request->esferaId ?? null,
+            $request->situacaoCompraId ?? null,
+            $request->modoDisputaId ?? null,
+            $request->tipoInstrumentoConvocatorioCodigo ?? null,
+            $request->fontesOrcamentarias ?? null,
         );
     }
 }

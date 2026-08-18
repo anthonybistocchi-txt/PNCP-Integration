@@ -10,6 +10,6 @@ Route::post('auth/register', [AuthController::class, 'register'])->middleware('v
 Route::middleware('auth.api')->group(function () {
 
     Route::prefix('contracts')->group(function () {
-        Route::get('/public', [GetPublicContratationsController::class, 'get'])->middleware('throttle:60,1');
+        Route::match(['QUERY'], '/', [GetPublicContratationsController::class, 'get'])->middleware('throttle:60,1');
     });
 });

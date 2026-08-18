@@ -38,9 +38,9 @@ class SyncPncpCommand extends Command
         $dto = new GetPublicContratationsDTO(
             dataInicial: $dataInicial,
             dataFinal: $dataFinal,
-            codigoModalidadeContratacao: '6', // Pregão
+            codigoModalidadeContratacao: 6, // Pregão
             uf: 'SP',
-            codigoMunicipioIbge: '3543402', // Ribeirão Preto
+            codigoMunicipioIbge: 3543402, // Ribeirão Preto
             pagina: 1,
             tamanhoPagina: 500
         );

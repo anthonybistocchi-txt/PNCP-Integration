@@ -26,11 +26,17 @@ class GetPublicContratationsRequest extends FormRequest
         return [
             'dataInicial'                 => 'required|date_format:Ymd|before_or_equal:dataFinal',
             'dataFinal'                   => 'required|date_format:Ymd|after_or_equal:dataInicial',
-            'codigoModalidadeContratacao' => 'required|string|max:255',
+            'codigoModalidadeContratacao' => 'required|integer',
             'uf'                          => 'nullable|string|max:2',
-            'codigoMunicipioIbge'         => 'nullable|string|max:7',
-            'pagina'                      => 'nullable|string|max:255',
-            'tamanhoPagina'               => 'nullable|string|max:255',
+            'codigoMunicipioIbge'         => 'nullable|integer',
+            'pagina'                            => 'nullable|string|max:255',
+            'tamanhoPagina'                     => 'nullable|string|max:255',
+            'poderId'                           => 'nullable|string|max:2',
+            'esferaId'                          => 'nullable|string|max:2',
+            'situacaoCompraId'                  => 'nullable|integer',
+            'modoDisputaId'                     => 'nullable|integer',
+            'tipoInstrumentoConvocatorioCodigo' => 'nullable|integer',
+            'fontesOrcamentarias'               => 'nullable|integer',
         ];
     }
 
