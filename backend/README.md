@@ -67,18 +67,88 @@ docker-compose exec php php artisan pncp:sync
 
 ## 📚 Endpoints da API
 
-### `GET /api/contracts/public`
-Busca licitações públicas salvas no banco de dados.
+### `QUERY /api/contracts`
+Endpoint projetado para suportar buscas complexas enviando o payload via `body` ao invés de sobrecarregar a URL. Utiliza o método HTTP `QUERY`.
 
 **Headers Requeridos:**
 - `API_KEY`: *(Chave de Acesso configurada no `.env`)*
 - `Accept`: `application/json`
 
-**Query Params:**
-- `dataInicial` (Obrigatório) - Formato `Ymd` (ex: 20260101)
-- `dataFinal` (Obrigatório) - Formato `Ymd` (ex: 20260815)
-- `codigoModalidadeContratacao` (Obrigatório) - ID da modalidade
-- `uf` (Opcional) - Sigla do estado (ex: SP)
-- `codigoMunicipioIbge` (Opcional) - Código de 7 dígitos do IBGE
-- `pagina` (Opcional) - Paginação para o frontend
-- `tamanhoPagina` (Opcional) - Quantidade de itens por página
+**Body Params (JSON):**
+```json
+{
+  "dataInicial": "20260101",
+  "dataFinal": "20260815",
+  "codigoModalidadeContratacao": 6,
+  "uf": "SP",
+  "codigoMunicipioIbge": 3543402,
+  "pagina": 1,
+  "tamanhoPagina": 50,
+  "poderId": "E",
+  "esferaId": "M",
+  "situacaoCompraId": 1,
+  "modoDisputaId": 1,
+  "tipoInstrumentoConvocatorioCodigo": 1,
+  "fontesOrcamentarias": 2
+}
+```
+*(Obs: `dataInicial`, `dataFinal` e `codigoModalidadeContratacao` são obrigatórios).*
+
+---
+
+## 🗂️ Tabelas de Domínio (Dicionário de Dados PNCP)
+
+Para facilitar a construção dos filtros no JSON, abaixo estão os principais domínios mapeados da API do PNCP para consulta:
+
+### `poderId`
+Identifica a qual poder da república a entidade pertence.
+* `E`: Executivo
+* `L`: Legislativo 
+* `J`: Judiciário 
+* `N`: Não se aplica *(geralmente prefeituras com omissões de cadastro ou natureza atípica)*
+
+### `esferaId`
+Esfera governamental.
+* `F`: Federal
+* `E`: Estadual
+* `M`: Municipal
+* `D`: Distrital (Distrito Federal)
+* `N`: Não se aplica
+
+### `situacaoCompraId`
+Status atual do processo da contratação.
+* `1`: Divulgada no PNCP *(ativa/visível)*
+* `2`: Revogada *(cancelada pelo órgão por interesse público)*
+* `3`: Anulada *(cancelada por ilegalidade ou vício jurídico)*
+* `4`: Suspensa *(pausada temporariamente, geralmente por decisão judicial)*
+
+### `modalidadeId` / `codigoModalidadeContratacao`
+A regra sob a qual o processo ocorre.
+* `1`: Leilão
+* `2`: Diálogo Competitivo
+* `3`: Concurso
+* `4`: Concorrência
+* `5`: Concurso (específico) / Chamamento Público
+* `6`: Pregão (Eletrônico ou Presencial)
+* `7`: Dispensa de Licitação
+* `8`: Inexigibilidade
+* `9`: Credenciamento
+* `10`: Pré-qualificação
+
+### `modoDisputaId`
+* `1`: Aberto *(Licitantes enviam lances públicos e sucessivos)*
+* `2`: Fechado *(Propostas sigilosas e abertas todas de uma vez)*
+* `3`: Aberto e Fechado *(Lances abertos seguidos de oferta final fechada)*
+* `4`: Fechado e Aberto *(Propostas iniciais fechadas, melhores vão para lances abertos)*
+* `5`: Não se aplica *(Contratações diretas como dispensas)*
+
+### `tipoInstrumentoConvocatorioCodigo`
+Documento oficial que formaliza a abertura.
+* `1`: Edital
+* `2`: Aviso de Contratação Direta (Dispensa/Inexigibilidade)
+* `3`: Ato de Inexigibilidade
+* `4`: Ato de Dispensa
+
+### `fontesOrcamentarias` (Código)
+* `1`: Recursos do Tesouro *(Dinheiro do próprio caixa do ente, como impostos)*
+* `2`: Outras Fontes *(Transferências, convênios, emendas ou fundos setoriais)*
