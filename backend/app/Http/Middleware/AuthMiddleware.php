@@ -24,7 +24,8 @@ class AuthMiddleware
             ], 401);
         }
 
-        $token = str_replace('Bearer ', '', $token);
+        $token = str_replace(['Bearer ', '"', "'"], '', $token);
+        $token = trim($token);
 
         $user = User::where('api_key', $token)->first();
 
