@@ -32,7 +32,7 @@ class SyncPncpCommand extends Command
         // Em um sistema real, você buscaria do banco de dados quais cidades/UFs seus clientes assinam
         // e faria um foreach disparando um Job para cada combinação.
         // Como MVP, vamos simular a busca para Ribeirão Preto nos últimos 30 dias.
-        $dataInicial = now()->subDays(30)->format('Ymd');
+        $dataInicial = now()->subDays(17)->format('Ymd');
         $dataFinal   = now()->format('Ymd');
 
         $dto = new GetPublicContratationsDTO(
@@ -41,8 +41,8 @@ class SyncPncpCommand extends Command
             codigoModalidadeContratacao: '6', // Pregão
             uf: 'SP',
             codigoMunicipioIbge: '3543402', // Ribeirão Preto
-            pagina: null,
-            tamanhoPagina: null
+            pagina: 1,
+            tamanhoPagina: 500
         );
 
         SyncPncpDataJob::dispatch($dto);

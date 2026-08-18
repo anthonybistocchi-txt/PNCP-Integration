@@ -16,15 +16,15 @@ class ProcessPncpPageJob implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    // Tempo de tolerância generoso, mas como é só uma página, vai rodar em segundos
-    public $timeout = 120;
+    // Aumentado o timeout para 10 minutos para acomodar o usleep no processamento de até 50 itens
+    public $timeout = 600;
 
     // Se a API do governo cair, ele tenta rodar esse job até 5 vezes
     public $tries = 5;
 
     // Se o Job falhar (ex: Too Many Requests), ele não tenta de novo na mesma hora.
-    // Ele vai esperar 60s na 1ª falha, 120s na 2ª, e 5 minutos nas seguintes.
-    public $backoff = [60, 120, 300];
+    // O Job vai esperar 2 minutos na 1ª falha, 5 minutos na 2ª, 10 minutos na 3ª, 20 minutos na 4ª e 40 minutos na 5ª.
+    public $backoff = [120, 300, 600, 1200, 2400];
 
     /**
      * Create a new job instance.
@@ -57,6 +57,23 @@ class ProcessPncpPageJob implements ShouldQueue
         if (!$response || empty($response->data)) {
             Log::info("ProcessPncpPageJob finished. No data on page {$this->pagina}.");
             return;
+        }
+
+        // Para cada item da página, vamos buscar os documentos (editais, anexos) associados
+        foreach ($response->data as $item) {
+            $cnpj = $item->orgaoEntidade->cnpj ?? null;
+            $ano = $item->anoCompra ?? null;
+            $sequencial = $item->sequencialCompra ?? null;
+
+            if ($cnpj && $ano && $sequencial) {
+                // Adiciona o array de arquivos/documentos ao payload do item
+                $item->documentos = $client->getArquivos($cnpj, $ano, $sequencial);
+
+                // Dorme 0.2 segundos (200.000 microssegundos) para evitar DDoS e 429 Too Many Requests
+                usleep(200000);
+            } else {
+                $item->documentos = [];
+            }
         }
 
         // Passa o array completo para a Action fazer o Bulk Upsert

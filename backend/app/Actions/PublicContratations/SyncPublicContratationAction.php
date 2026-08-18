@@ -47,6 +47,7 @@ class SyncPublicContratationAction
                 'codigo_municipio_ibge',
                 'codigo_modalidade_contratacao',
                 'payload_completo',
+                'documentos',
             ]
         );
 
@@ -68,6 +69,7 @@ class SyncPublicContratationAction
             // No upsert em massa, arrays não passam pelo mutator cast automático de todos os drivers, 
             // então garantimos o json_encode aqui.
             'payload_completo'              => json_encode($data), 
+            'documentos'                    => json_encode($data->documentos ?? []),
         ];
     }
 }

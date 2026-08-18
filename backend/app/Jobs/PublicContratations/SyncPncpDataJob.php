@@ -18,7 +18,7 @@ class SyncPncpDataJob implements ShouldQueue
     // Dá 5 minutos (300 segundos) de tolerância antes de matar o Job
     public $timeout = 300;
 
-    // Se a API do governo cair, ele tenta rodar esse job até 3 vezes
+    // Se a API do governo cair, ele tenta rodar esse job até 5 vezes
     public $tries = 5;
 
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
@@ -37,7 +37,7 @@ class SyncPncpDataJob implements ShouldQueue
     {
         Log::info('SyncPncpDataJob (MASTER) started for parameters', (array) $this->dto);
 
-        $tamanhoPagina = 500; // Máximo aceito/recomendado para bulk sync
+        $tamanhoPagina = 50; // Máximo aceito da api do PNCP
 
         // Faz apenas UMA requisição para a primeira página para descobrir o Total de Páginas
         $queryParams = array_filter([
@@ -57,12 +57,15 @@ class SyncPncpDataJob implements ShouldQueue
             return;
         }
 
+
         $totalPaginas = $response->totalPaginas ?? 1;
         Log::info("PNCP API reports {$response->totalRegistros} total records across {$totalPaginas} pages.");
 
-        // Cria os N Jobs Filhos (Operários) e joga na fila
+        // Cria os N Jobs Filhos (Operários) e joga na fila, escalonando no tempo (ex: a cada 20 segundos)
         for ($pagina = 1; $pagina <= $totalPaginas; $pagina++) {
-            ProcessPncpPageJob::dispatch($this->dto, $pagina, $tamanhoPagina);
+            $delayInSeconds = ($pagina - 1) * 20;
+            ProcessPncpPageJob::dispatch($this->dto, $pagina, $tamanhoPagina)
+                ->delay(now()->addSeconds($delayInSeconds));
         }
 
         Log::info("SyncPncpDataJob (MASTER) dispatched {$totalPaginas} ProcessPncpPageJobs successfully.");
