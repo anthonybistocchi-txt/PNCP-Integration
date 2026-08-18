@@ -20,6 +20,7 @@ class SyncPublicContratationAction
 
         foreach ($pncpItems as $pncpItem) {
             $numeroControle = $pncpItem->numeroControlePNCP ?? null;
+
             if (!$numeroControle) {
                 continue;
             }
@@ -46,6 +47,12 @@ class SyncPublicContratationAction
                 'uf',
                 'codigo_municipio_ibge',
                 'codigo_modalidade_contratacao',
+                'situacao_compra_id',
+                'valor_total_estimado',
+                'data_abertura_proposta',
+                'data_encerramento_proposta',
+                'srp',
+                'objeto_compra',
                 'payload_completo',
                 'documentos',
             ]
@@ -60,15 +67,20 @@ class SyncPublicContratationAction
             'numero_controle_pncp'          => $data->numeroControlePNCP,
             'orgao_cnpj'                    => $data->orgaoEntidade->cnpj ?? null,
             'ano_compra'                    => $data->anoCompra ?? null,
-            // Formatando datas para o formato do banco, caso venham fora do padrão
+            'situacao_compra_id'            => $data->situacaoCompraId ?? null,
+            'valor_total_estimado'          => isset($data->valorTotalEstimado) ? (int) round($data->valorTotalEstimado * 100) : null,
+            'data_abertura_proposta'        => !empty($data->dataAberturaProposta) ? date('Y-m-d H:i:s', strtotime($data->dataAberturaProposta)) : null,
             'data_publicacao_pncp'          => $data->dataPublicacaoPncp ? date('Y-m-d H:i:s', strtotime($data->dataPublicacaoPncp)) : null,
             'data_atualizacao_global'       => ($data->dataAtualizacaoGlobal ?? $data->dataAtualizacao) ? date('Y-m-d H:i:s', strtotime($data->dataAtualizacaoGlobal ?? $data->dataAtualizacao)) : null,
             'uf'                            => $data->unidadeOrgao->ufSigla ?? null,
             'codigo_municipio_ibge'         => $data->unidadeOrgao->codigoIbge ?? null,
             'codigo_modalidade_contratacao' => $data->modalidadeId ?? null,
+            'data_encerramento_proposta'    => !empty($data->dataEncerramentoProposta) ? date('Y-m-d H:i:s', strtotime($data->dataEncerramentoProposta)) : null,
+            'srp'                           => $data->srp ?? false,
+            'objeto_compra'                 => $data->objetoCompra ?? null,
             // No upsert em massa, arrays não passam pelo mutator cast automático de todos os drivers, 
             // então garantimos o json_encode aqui.
-            'payload_completo'              => json_encode($data), 
+            'payload_completo'              => json_encode($data),
             'documentos'                    => json_encode($data->documentos ?? []),
         ];
     }
