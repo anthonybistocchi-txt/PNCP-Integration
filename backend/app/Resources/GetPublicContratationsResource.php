@@ -43,6 +43,7 @@ class GetPublicContratationsResource extends JsonResource
                 'aberturaProposta'     => $payload->dataAberturaProposta ?? null,
                 'encerramentoProposta' => $payload->dataEncerramentoProposta ?? null,
             ],
+            'documentos' => $this->documentos ?? [],
             'links' => [
                 'sistemaOrigem'      => $payload->linkSistemaOrigem ?? null,
                 'processoEletronico' => $payload->linkProcessoEletronico ?? null,

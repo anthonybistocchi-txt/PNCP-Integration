@@ -21,6 +21,7 @@ class PublicContratation extends Model
         'codigo_municipio_ibge',
         'codigo_modalidade_contratacao',
         'payload_completo',
+        'documentos',
     ];
 
     // Transforma o JSON do banco de volta para um objeto PHP magicamente
@@ -28,5 +29,6 @@ class PublicContratation extends Model
         'data_publicacao_pncp' => 'datetime',
         'data_atualizacao_global' => 'datetime',
         'payload_completo' => 'object', // ou 'array' se preferir trabalhar com arrays assoc
+        'documentos' => 'array',
     ];
 }
