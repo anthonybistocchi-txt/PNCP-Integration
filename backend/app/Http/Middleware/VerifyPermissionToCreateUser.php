@@ -18,10 +18,13 @@ class VerifyPermissionToCreateUser
     {
         $user = User::where('id', 1)->first();
 
+        $token = $request->bearerToken() ?? $request->header('API_KEY') ?? $request->header('Authorization');
+        $token = str_replace('Bearer ', '', (string) $token);
+
         if (
-            $request->header('Authorization') !== env('ADMIN_API_KEY')
+            $token !== env('ADMIN_API_KEY')
             &&
-            $request->header('Authorization') !== $user->api_key
+            $token !== $user->api_key
         ) {
             return response()->json([
                 'error' => 'Você não tem permissão para criar usuários',

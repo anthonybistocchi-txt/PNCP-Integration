@@ -16,13 +16,17 @@ class AuthMiddleware
      */
     public function handle(Request $request, Closure $next): Response
     {
-        if (!$request->header('Authorization')) {
+        $token = $request->bearerToken() ?? $request->header('API_KEY') ?? $request->header('Authorization');
+        
+        if (!$token) {
             return response()->json([
                 'error' => 'API KEY não fornecida',
             ], 401);
         }
 
-        $user = User::where('api_key', $request->header('Authorization'))->first();
+        $token = str_replace('Bearer ', '', $token);
+
+        $user = User::where('api_key', $token)->first();
 
         if (!$user) {
             return response()->json([
