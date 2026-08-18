@@ -11,6 +11,8 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Http\Client\RequestException;
 use App\Jobs\PublicContratations\ProcessPncpPageJob;
 
 class SyncPncpDataJob implements ShouldQueue
@@ -20,6 +22,9 @@ class SyncPncpDataJob implements ShouldQueue
 
     // Se a API do governo cair, ele tenta rodar esse job até 5 vezes
     public $tries = 5;
+
+    // Atrasos para retentativas naturais de falha
+    public $backoff = [120, 300, 600];
 
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
@@ -35,6 +40,20 @@ class SyncPncpDataJob implements ShouldQueue
      */
     public function handle(PncpClient $client): void
     {
+        // 1. Verificação global do Circuit Breaker antes de qualquer requisição
+        if (Cache::has('pncp_circuit_breaker_until')) 
+        {
+            $pauseUntil       = Cache::get('pncp_circuit_breaker_until');
+            $remainingSeconds = $pauseUntil - now()->timestamp;
+            
+            if ($remainingSeconds > 0) 
+            {
+                Log::info("Circuit Breaker ativo. Devolvendo Job Mestre para a fila com atraso de {$remainingSeconds}s.");
+                $this->release($remainingSeconds);
+                return;
+            }
+        }
+
         Log::info('SyncPncpDataJob (MASTER) started for parameters', (array) $this->dto);
 
         $tamanhoPagina = 50; // Máximo aceito da api do PNCP
@@ -50,24 +69,44 @@ class SyncPncpDataJob implements ShouldQueue
             'tamanhoPagina'               => $tamanhoPagina,
         ]);
 
-        $response = $client->getContratacoes($queryParams);
+        try 
+        {
+            $response = $client->getContratacoes($queryParams);
 
-        if (!$response || empty($response->data)) {
-            Log::info('SyncPncpDataJob (MASTER) finished. No records found to sync.');
-            return;
+            if (!$response || empty($response->data)) 
+            {
+                Log::info('SyncPncpDataJob (MASTER) finished. No records found to sync.');
+                return;
+            }
+            $totalPaginas = $response->totalPaginas ?? 1;
+            Log::info("PNCP API reports {$response->totalRegistros} total records across {$totalPaginas} pages.");
+
+            // Cria os N Jobs Filhos (Operários) e joga na fila, escalonando no tempo (ex: a cada 20 segundos)
+            for ($pagina = 1; $pagina <= $totalPaginas; $pagina++) 
+            {
+                $delayInSeconds = ($pagina - 1) * 20;
+                ProcessPncpPageJob::dispatch($this->dto, $pagina, $tamanhoPagina)
+                    ->delay(now()->addSeconds($delayInSeconds));
+            }
+
+            Log::info("SyncPncpDataJob (MASTER) dispatched {$totalPaginas} ProcessPncpPageJobs successfully.");
+            
+        } 
+        catch (RequestException $error) 
+        {
+            if ($error->response->status() === 429) 
+            {
+                $pauseMinutes = 5; // 5 minutos de pausa
+                $pauseUntil   = now()->addMinutes($pauseMinutes)->timestamp;
+                
+                Cache::put('pncp_circuit_breaker_until', $pauseUntil, now()->addMinutes($pauseMinutes));
+                
+                Log::warning("Erro 429 (Too Many Requests) no PNCP! Ativando Circuit Breaker por {$pauseMinutes} minutos. Job Mestre adiado.");
+                $this->release($pauseMinutes * 60);
+                return;
+            }
+            
+            throw $error;
         }
-
-
-        $totalPaginas = $response->totalPaginas ?? 1;
-        Log::info("PNCP API reports {$response->totalRegistros} total records across {$totalPaginas} pages.");
-
-        // Cria os N Jobs Filhos (Operários) e joga na fila, escalonando no tempo (ex: a cada 20 segundos)
-        for ($pagina = 1; $pagina <= $totalPaginas; $pagina++) {
-            $delayInSeconds = ($pagina - 1) * 20;
-            ProcessPncpPageJob::dispatch($this->dto, $pagina, $tamanhoPagina)
-                ->delay(now()->addSeconds($delayInSeconds));
-        }
-
-        Log::info("SyncPncpDataJob (MASTER) dispatched {$totalPaginas} ProcessPncpPageJobs successfully.");
     }
 }
