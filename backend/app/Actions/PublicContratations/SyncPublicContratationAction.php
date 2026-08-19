@@ -36,33 +36,44 @@ class SyncPublicContratationAction
             return;
         }
 
-        // Executa o Bulk Upsert:
-        // Parâmetro 1: Array associativo com os dados.
-        // Parâmetro 2: A coluna(s) que identifica(m) um registro único (Primary Key).
-        // Parâmetro 3: Quais colunas devem ser atualizadas se o registro já existir.
-        PublicContratation::upsert(
-            $upsertData,
-            ['numero_controle_pncp'],
-            [
-                'orgao_cnpj',
-                'ano_compra',
-                'data_publicacao_pncp',
-                'data_atualizacao_global',
-                'uf',
-                'codigo_municipio_ibge',
-                'codigo_modalidade_contratacao',
-                'situacao_compra_id',
-                'valor_total_estimado',
-                'data_abertura_proposta',
-                'data_encerramento_proposta',
-                'srp',
-                'objeto_compra',
-                'payload_completo',
-                'documentos',
-            ]
-        );
+        try
+        {
+            PublicContratation::upsert(
+                $upsertData,
+                ['numero_controle_pncp'],
+                [
+                    'orgao_cnpj',
+                    'ano_compra',
+                    'data_publicacao_pncp',
+                    'data_atualizacao_global',
+                    'uf',
+                    'codigo_municipio_ibge',
+                    'codigo_modalidade_contratacao',
+                    'situacao_compra_id',
+                    'valor_total_estimado',
+                    'data_abertura_proposta',
+                    'data_encerramento_proposta',
+                    'srp',
+                    'objeto_compra',
+                    'payload_completo',
+                    'documentos',
+                ]
+            );
 
-        Log::info("PNCP Sync: Bulk Upserted " . count($upsertData) . " records.");
+            Log::info("PNCP Sync: Bulk Upserted " . count($upsertData) . " records.");
+        }
+        catch (\Throwable $error)
+        {
+            Log::error(json_encode([
+                'error_type'   => 'PNCP_UPSERT_DB_ERROR',
+                'reason'       => 'Falha ao executar o Bulk Upsert no banco de dados.',
+                'message'      => $error->getMessage(),
+                'batch_size'   => count($upsertData),
+                'sample_key'   => $upsertData[0]['numero_controle_pncp'] ?? 'N/A',
+            ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+
+            throw $error;
+        }
     }
 
     private function mapData(object $data): array

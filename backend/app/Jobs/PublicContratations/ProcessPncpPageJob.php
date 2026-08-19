@@ -119,7 +119,25 @@ class ProcessPncpPageJob implements ShouldQueue
                 return;
             }
             
-            // Outros erros continuam seguindo o fluxo normal de falha (usando o $backoff configurado)
+            // Outros erros HTTP continuam seguindo o fluxo normal de falha (usando o $backoff configurado)
+            throw $error;
+        }
+        catch (\Throwable $error)
+        {
+            // Captura qualquer outro erro inesperado (DB, cast inválido, null pointer, etc)
+            // e o reloga com CONTEXTO COMPLETO antes de repassar ao framework.
+            Log::error(json_encode([
+                'error_type'  => 'PNCP_UNEXPECTED_JOB_ERROR',
+                'reason'      => 'Erro inesperado no ProcessPncpPageJob. Ver campo "message" para detalhes.',
+                'message'     => $error->getMessage(),
+                'job_context' => [
+                    'page'       => $this->pagina,
+                    'page_size'  => $this->tamanhoPagina,
+                    'attempt'    => $this->attempts(),
+                    'dto'        => (array) $this->dto,
+                ],
+            ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+
             throw $error;
         }
     }

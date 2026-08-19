@@ -89,7 +89,13 @@ class SyncPncpDataJob implements ShouldQueue
                     ->delay(now()->addSeconds($delayInSeconds));
             }
 
-            Log::info("SyncPncpDataJob (MASTER) dispatched {$totalPaginas} ProcessPncpPageJobs successfully.");
+            Log::info(json_encode([
+                'event'           => 'PNCP_MASTER_JOB_COMPLETED',
+                'total_pages'     => $totalPaginas,
+                'total_records'   => $response->totalRegistros,
+                'jobs_dispatched' => $totalPaginas,
+                'dto'             => (array) $this->dto,
+            ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
             
         } 
         catch (RequestException $error) 
@@ -106,6 +112,21 @@ class SyncPncpDataJob implements ShouldQueue
                 return;
             }
             
+            throw $error;
+        }
+        catch (\Throwable $error)
+        {
+            // Captura qualquer erro inesperado no Job Mestre com contexto completo
+            Log::error(json_encode([
+                'error_type'  => 'PNCP_UNEXPECTED_MASTER_JOB_ERROR',
+                'reason'      => 'Erro inesperado no SyncPncpDataJob (MASTER). Ver campo "message" para detalhes.',
+                'message'     => $error->getMessage(),
+                'job_context' => [
+                    'attempt' => $this->attempts(),
+                    'dto'     => (array) $this->dto,
+                ],
+            ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+
             throw $error;
         }
     }
