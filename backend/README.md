@@ -21,7 +21,7 @@ Focado em alto volume de ingestão de dados.
 - **Padrão Fan-Out**: O Mestre consulta a API do PNCP apenas para descobrir o total de páginas existentes. Em seguida, ele cria e enfileira um operário (`ProcessPncpPageJob`) para *cada página* existente.
 - **Tolerância a Falhas e Logs**: O sistema captura erros e "Poisoned Jobs" silenciosamente. Se a rede oscilar, o Laravel tenta novamente (até 5 vezes). Erros de Timeout, Rate Limiting (429) e Falhas Fatais geram Logs Estruturados em JSON para facilitar a depuração via DataDog/Elasticsearch sem poluir o log com Stack Traces gigantes.
 - **Circuit Breaker**: Integrado com Redis, o sistema detecta erros `429 Too Many Requests` (Rate Limit da API do Governo) e imediatamente "abre o disjuntor", devolvendo os Jobs para a fila com uma pausa inteligente de 5 minutos.
-- **Bulk Upsert**: O operário baixa páginas de 500 licitações do Governo e envia para a `SyncPublicContratationAction`. A Action executa um `PublicContratation::upsert()` no Postgres de forma massiva.
+- **Bulk Upsert**: O operário baixa páginas de 50 licitações do Governo e envia para a `SyncPublicContratationAction`. A Action executa um `PublicContratation::upsert()` no Postgres de forma massiva.
 
 ---
 

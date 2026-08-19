@@ -3,7 +3,6 @@
 namespace App\Http\Requests\PublicContratations;
 
 use App\DTOs\PublicContratations\GetPublicContratationsDTO;
-use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 
 class GetPublicContratationsRequest extends FormRequest
@@ -18,8 +17,6 @@ class GetPublicContratationsRequest extends FormRequest
 
     /**
      * Get the validation rules that apply to the request.
-     *
-     * 
      */
     public function rules(): array
     {
@@ -29,8 +26,6 @@ class GetPublicContratationsRequest extends FormRequest
             'codigoModalidadeContratacao'       => 'required|integer',
             'uf'                                => 'nullable|string|max:2',
             'codigoMunicipioIbge'               => 'nullable|integer',
-            'pagina'                            => 'nullable|integer|min:1',
-            'tamanhoPagina'                     => 'nullable|integer|min:1|max:30',
             'poderId'                           => 'nullable|string|max:2',
             'esferaId'                          => 'nullable|string|max:2',
             'situacaoCompraId'                  => 'nullable|integer',
@@ -38,43 +33,48 @@ class GetPublicContratationsRequest extends FormRequest
             'tipoInstrumentoConvocatorioCodigo' => 'nullable|integer',
             'fontesOrcamentarias'               => 'nullable|integer',
             'tipoData'                          => 'nullable|string|in:publicacao,atualizacao',
+
+            // Keyset Pagination
+            'cursor' => 'nullable|string',
+            'limit'  => 'nullable|integer|min:1|max:50',
         ];
     }
 
     public function toDTO(): GetPublicContratationsDTO
     {
+        $validated = $this->validated();
+
         return new GetPublicContratationsDTO(
-            dataInicial:                 $this->validated('dataInicial'),
-            dataFinal:                   $this->validated('dataFinal'),
-            codigoModalidadeContratacao: $this->validated('codigoModalidadeContratacao'),
-            uf:                          strtoupper($this->validated('uf')),
-            codigoMunicipioIbge:         $this->validated('codigoMunicipioIbge'),
-            pagina:                      $this->validated('pagina'),
-            tamanhoPagina:               $this->validated('tamanhoPagina'),
+            dataInicial:                 $validated['dataInicial'],
+            dataFinal:                   $validated['dataFinal'],
+            codigoModalidadeContratacao: (int) $validated['codigoModalidadeContratacao'],
+            uf:                          isset($validated['uf']) ? strtoupper($validated['uf']) : null,
+            codigoMunicipioIbge:         $validated['codigoMunicipioIbge'] ?? null,
+            poderId:                     $validated['poderId'] ?? null,
+            esferaId:                    $validated['esferaId'] ?? null,
+            situacaoCompraId:            $validated['situacaoCompraId'] ?? null,
+            modoDisputaId:               $validated['modoDisputaId'] ?? null,
+            tipoInstrumentoConvocatorioCodigo: $validated['tipoInstrumentoConvocatorioCodigo'] ?? null,
+            fontesOrcamentarias:         $validated['fontesOrcamentarias'] ?? null,
+            tipoData:                    $validated['tipoData'] ?? 'publicacao',
+            cursor:                      $validated['cursor'] ?? null,
+            limit:                       (int) ($validated['limit'] ?? 15),
         );
     }
 
-    public function messages()
+    public function messages(): array
     {
         return [
             'dataInicial.required'                 => 'A data inicial é obrigatória.',
-            'dataInicial.date_format'              => 'A data inicial deve ser no formato Ymd.',
+            'dataInicial.date_format'              => 'A data inicial deve ser no formato Ymd. Ex: 20260101.',
             'dataFinal.required'                   => 'A data final é obrigatória.',
-            'dataFinal.date_format'                => 'A data final deve ser no formato Ymd.',
+            'dataFinal.date_format'                => 'A data final deve ser no formato Ymd. Ex: 20260815.',
             'codigoModalidadeContratacao.required' => 'O código da modalidade de contratação é obrigatório.',
             'codigoModalidadeContratacao.integer'  => 'O código da modalidade de contratação deve ser um número inteiro.',
-            'uf.nullable'                          => 'A UF deve ser uma string.',
-            'uf.string'                            => 'A UF deve ser uma string.',
             'uf.max'                               => 'A UF deve ter no máximo 2 caracteres.',
-            'codigoMunicipioIbge.nullable'         => 'O código do município IBGE deve ser um inteiro.',
             'codigoMunicipioIbge.integer'          => 'O código do município IBGE deve ser um número inteiro.',
-            'pagina.nullable'                      => 'A página deve ser um inteiro.',
-            'pagina.integer'                       => 'A página deve ser um número inteiro.',
-            'pagina.min'                           => 'A página mínima é 1.',
-            'tamanhoPagina.nullable'               => 'O tamanho da página deve ser um inteiro.',
-            'tamanhoPagina.integer'                => 'O tamanho da página deve ser um número inteiro.',
-            'tamanhoPagina.min'                    => 'O tamanho mínimo da página é 1.',
-            'tamanhoPagina.max'                    => 'Por motivos de performance, o tamanho máximo de página permitido é 30.',
+            'limit.min'                            => 'O limite mínimo por página é 1.',
+            'limit.max'                            => 'Por motivos de performance, o limite máximo por página é 30.',
         ];
     }
 }

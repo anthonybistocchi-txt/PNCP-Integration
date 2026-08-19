@@ -4,52 +4,106 @@ namespace App\Repositories;
 
 use App\DTOs\PublicContratations\GetPublicContratationsDTO;
 use App\Models\PublicContratation;
+use Illuminate\Support\Collection;
 
 class PublicContratationRepository
 {
     /**
-     * Consulta apenas o banco de dados local usando os filtros passados.
-     * Como a tabela crescerá muito, é vital usar os índices adequadamente.
+     * Consulta o banco de dados local usando os filtros do DTO.
+     *
+     * Usa Keyset Pagination (cursor-based) ao invés de OFFSET.
+     * Com OFFSET, a página 500 obriga o PostgreSQL a ler e descartar 14.000+ linhas.
+     * Com cursor, a query sempre localiza diretamente o ponto de partida pelo índice.
+     *
+     * Formato do cursor: Base64(JSON({last_date, last_numero_controle}))
+     * Ordenação estável: data_publicacao_pncp DESC, numero_controle_pncp ASC
      */
     public function getByFilters(GetPublicContratationsDTO $dto): array
     {
         $query = PublicContratation::query()
             ->when($dto->dataInicial && $dto->dataFinal, function ($query) use ($dto) {
                 $coluna = $dto->tipoData === 'atualizacao' ? 'data_atualizacao_global' : 'data_publicacao_pncp';
-                
+
                 $query->whereBetween($coluna, [
                     $this->formatDate($dto->dataInicial, '00:00:00'),
-                    $this->formatDate($dto->dataFinal, '23:59:59')
+                    $this->formatDate($dto->dataFinal, '23:59:59'),
                 ]);
             })
-            ->when($dto->uf, fn($query, $uf)                                  => $query->where('uf', $uf))
-            ->when($dto->codigoMunicipioIbge, fn($query, $ibge)               => $query->where('codigo_municipio_ibge', $ibge))
-            ->when($dto->codigoModalidadeContratacao, fn($query, $modalidade) => $query->where('codigo_modalidade_contratacao', $modalidade))
-            ->when($dto->poderId, fn($query, $val)                            => $query->where('payload_completo->orgaoEntidade->poderId', $val))
-            ->when($dto->esferaId, fn($query, $val)                           => $query->where('payload_completo->orgaoEntidade->esferaId', $val))
-            ->when($dto->situacaoCompraId, fn($query, $val)                   => $query->where('payload_completo->situacaoCompraId', (int) $val))
-            ->when($dto->modoDisputaId, fn($query, $val)                      => $query->where('payload_completo->modoDisputaId', (int) $val))
-            ->when($dto->tipoInstrumentoConvocatorioCodigo, fn($query, $val)  => $query->where('payload_completo->tipoInstrumentoConvocatorioCodigo', (int) $val))
-            ->when($dto->fontesOrcamentarias, function ($query, $val) {
-                $query->whereJsonContains('payload_completo->fontesOrcamentarias', ['codigo' => (int) $val]);
+            ->when($dto->uf, fn($q, $uf)                                  => $q->where('uf', $uf))
+            ->when($dto->codigoMunicipioIbge, fn($q, $ibge)               => $q->where('codigo_municipio_ibge', $ibge))
+            ->when($dto->codigoModalidadeContratacao, fn($q, $modalidade) => $q->where('codigo_modalidade_contratacao', $modalidade))
+            ->when($dto->poderId, fn($q, $val)                            => $q->where('payload_completo->orgaoEntidade->poderId', $val))
+            ->when($dto->esferaId, fn($q, $val)                           => $q->where('payload_completo->orgaoEntidade->esferaId', $val))
+            ->when($dto->situacaoCompraId, fn($q, $val)                   => $q->where('payload_completo->situacaoCompraId', (int) $val))
+            ->when($dto->modoDisputaId, fn($q, $val)                      => $q->where('payload_completo->modoDisputaId', (int) $val))
+            ->when($dto->tipoInstrumentoConvocatorioCodigo, fn($q, $val)  => $q->where('payload_completo->tipoInstrumentoConvocatorioCodigo', (int) $val))
+            ->when($dto->fontesOrcamentarias, fn($q, $val)                => $q->whereJsonContains('payload_completo->fontesOrcamentarias', ['codigo' => (int) $val]));
+
+        // Aplica o cursor para pular registros já vistos.
+        // O cursor encoda o último (data_publicacao_pncp, numero_controle_pncp) recebido.
+        $cursorData = $this->decodeCursor($dto->cursor);
+
+        if ($cursorData) {
+            $query->where(function ($q) use ($cursorData) {
+                $q->where('data_publicacao_pncp', '<', $cursorData['date'])
+                  ->orWhere(function ($q) use ($cursorData) {
+                      $q->where('data_publicacao_pncp', '=', $cursorData['date'])
+                        ->where('numero_controle_pncp', '>', $cursorData['numero_controle']);
+                  });
             });
+        }
 
-        // Simulação de paginação ou limites (no modelo final deve-se usar ->paginate())
-        $take  = $dto->tamanhoPagina ? (int) $dto->tamanhoPagina : 15;
-        $skip  = $dto->pagina        ? ((int) $dto->pagina - 1) * $take : 0;
+        $data = $query
+            ->orderBy('data_publicacao_pncp', 'desc')
+            ->orderBy('numero_controle_pncp', 'asc')
+            ->limit($dto->limit)
+            ->get();
 
-        // Clona a query ANTES do skip/take para pegar o total real sem limite
-        $cloneQuery = clone $query;
-        $total = $cloneQuery->count();
-
-        // Faz o get retornando uma Collection de OBJETOS (Models), e não array
-        $data = $query->skip($skip)->take($take)->get();
+        $nextCursor = $this->buildNextCursor($data, $dto->limit);
 
         return [
-            'data'        => $data,     
-            'count'       => $total,
-            'total_pages' => $take > 0 ? ceil($total / $take) : 1
+            'data'        => $data,
+            'count_page'  => $data->count(),
+            'next_cursor' => $nextCursor,
+            'has_more'    => $nextCursor !== null,
         ];
+    }
+
+    /**
+     * Gera o cursor para a próxima página a partir do último item retornado.
+     * Retorna null quando não há mais páginas (resultado menor que o limit solicitado).
+     */
+    private function buildNextCursor(Collection $data, int $limit): ?string
+    {
+        if ($data->count() < $limit) {
+            return null;
+        }
+
+        $last = $data->last();
+
+        return base64_encode(json_encode([
+            'date'            => $last->data_publicacao_pncp,
+            'numero_controle' => $last->numero_controle_pncp,
+        ]));
+    }
+
+    /**
+     * Decodifica o cursor recebido do cliente.
+     * Retorna null se o cursor for inválido ou ausente (primeira página).
+     */
+    private function decodeCursor(?string $cursor): ?array
+    {
+        if (!$cursor) {
+            return null;
+        }
+
+        $decoded = json_decode(base64_decode($cursor), true);
+
+        if (!is_array($decoded) || empty($decoded['date']) || empty($decoded['numero_controle'])) {
+            return null;
+        }
+
+        return $decoded;
     }
 
     private function formatDate(string $dateString, string $time): string
