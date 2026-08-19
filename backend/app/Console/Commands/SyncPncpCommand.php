@@ -22,7 +22,9 @@ class SyncPncpCommand extends Command
      */
     protected $description = 'Dispara o Job de sincronização com o PNCP para alimentar o banco de dados local.';
 
-    private $modalidadeId = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]; // Leilão, Diálogo Competitivo, Concurso, Concorrência, Concurso / Chamamento Público, Pregão, Dispensa de Licitação, Inexigibilidade, Credenciamento, Pré-qualificação
+    // private $modalidadeId = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]; // Leilão, Diálogo Competitivo, Concurso, Concorrência, Concurso / Chamamento Público, Pregão, Dispensa de Licitação, Inexigibilidade, Credenciamento, Pré-qualificação
+
+    private $modalidadeId = [6]; // Pregão
 
     /**
      * Execute the console command.
