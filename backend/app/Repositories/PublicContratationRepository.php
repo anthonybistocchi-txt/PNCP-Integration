@@ -4,7 +4,6 @@ namespace App\Repositories;
 
 use App\DTOs\PublicContratations\GetPublicContratationsDTO;
 use App\Models\PublicContratation;
-use Illuminate\Database\Eloquent\Collection;
 
 class PublicContratationRepository
 {
@@ -12,7 +11,7 @@ class PublicContratationRepository
      * Consulta apenas o banco de dados local usando os filtros passados.
      * Como a tabela crescerá muito, é vital usar os índices adequadamente.
      */
-    public function getByFilters(GetPublicContratationsDTO $dto): Collection
+    public function getByFilters(GetPublicContratationsDTO $dto): array
     {
         $query = PublicContratation::query()
             ->when($dto->dataInicial && $dto->dataFinal, function ($query) use ($dto) {
@@ -36,10 +35,21 @@ class PublicContratationRepository
             });
 
         // Simulação de paginação ou limites (no modelo final deve-se usar ->paginate())
-        $limit  = $dto->tamanhoPagina ? (int) $dto->tamanhoPagina : 15;
-        $offset = $dto->pagina        ? ((int) $dto->pagina - 1) * $limit : 0;
+        $take  = $dto->tamanhoPagina ? (int) $dto->tamanhoPagina : 15;
+        $skip  = $dto->pagina        ? ((int) $dto->pagina - 1) * $take : 0;
 
-        return $query->skip($offset)->take($limit)->get();
+        // Clona a query ANTES do skip/take para pegar o total real sem limite
+        $cloneQuery = clone $query;
+        $total = $cloneQuery->count();
+
+        // Faz o get retornando uma Collection de OBJETOS (Models), e não array
+        $data = $query->skip($skip)->take($take)->get();
+
+        return [
+            'data'        => $data,     
+            'count'       => $total,
+            'total_pages' => $take > 0 ? ceil($total / $take) : 1
+        ];
     }
 
     private function formatDate(string $dateString, string $time): string

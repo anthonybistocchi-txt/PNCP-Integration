@@ -15,8 +15,15 @@ class GetPublicContratationsController extends Controller
 
     public function get(GetPublicContratationsRequest $request)
     {
-        $data = $this->service->get($request->toDTO());
+        $result = $this->service->get($request->toDTO());
 
-        return GetPublicContratationsResource::collection($data);
+        $contratations = GetPublicContratationsResource::collection($result['data']);
+
+        return response()->json([
+            'data'        => $contratations,
+            'count_page'  => $result['data']->count(),
+            'count'       => $result['count'],
+            'total_pages' => $result['total_pages'],
+        ]);
     }
 }

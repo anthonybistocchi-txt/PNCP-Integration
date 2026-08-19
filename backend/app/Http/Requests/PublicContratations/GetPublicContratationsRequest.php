@@ -29,8 +29,8 @@ class GetPublicContratationsRequest extends FormRequest
             'codigoModalidadeContratacao'       => 'required|integer',
             'uf'                                => 'nullable|string|max:2',
             'codigoMunicipioIbge'               => 'nullable|integer',
-            'pagina'                            => 'nullable|integer',
-            'tamanhoPagina'                     => 'nullable|integer',
+            'pagina'                            => 'nullable|integer|min:1',
+            'tamanhoPagina'                     => 'nullable|integer|min:1|max:30',
             'poderId'                           => 'nullable|string|max:2',
             'esferaId'                          => 'nullable|string|max:2',
             'situacaoCompraId'                  => 'nullable|integer',
@@ -70,8 +70,11 @@ class GetPublicContratationsRequest extends FormRequest
             'codigoMunicipioIbge.integer'          => 'O código do município IBGE deve ser um número inteiro.',
             'pagina.nullable'                      => 'A página deve ser um inteiro.',
             'pagina.integer'                       => 'A página deve ser um número inteiro.',
+            'pagina.min'                           => 'A página mínima é 1.',
             'tamanhoPagina.nullable'               => 'O tamanho da página deve ser um inteiro.',
             'tamanhoPagina.integer'                => 'O tamanho da página deve ser um número inteiro.',
+            'tamanhoPagina.min'                    => 'O tamanho mínimo da página é 1.',
+            'tamanhoPagina.max'                    => 'Por motivos de performance, o tamanho máximo de página permitido é 30.',
         ];
     }
 }
