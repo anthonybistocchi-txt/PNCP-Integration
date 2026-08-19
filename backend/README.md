@@ -70,6 +70,9 @@ docker-compose exec php php artisan pncp:sync
 
 ## 📚 Endpoints da API
 
+### `GET /api/healthz`
+Endpoint público para verificação de saúde da aplicação (Health Check). Retorna o status de conexão com o Banco de Dados e com o Redis. Ideal para uso com Docker Healthcheck ou serviços de monitoramento.
+
 ### `QUERY /api/contracts`
 Endpoint projetado para suportar buscas complexas enviando o payload via `body` ao invés de sobrecarregar a URL. Utiliza o método HTTP `QUERY`.
 
@@ -86,8 +89,8 @@ Endpoint projetado para suportar buscas complexas enviando o payload via `body` 
   "tipoData": "publicacao", 
   "uf": "SP",
   "codigoMunicipioIbge": 3543402,
-  "pagina": 1,
-  "tamanhoPagina": 30,
+  "limit": 15,
+  "cursor": null,
   "poderId": "E",
   "esferaId": "M",
   "situacaoCompraId": 1,
@@ -96,10 +99,10 @@ Endpoint projetado para suportar buscas complexas enviando o payload via `body` 
   "fontesOrcamentarias": 2
 }
 ```
-*(Obs: `dataInicial`, `dataFinal` e `codigoModalidadeContratacao` são obrigatórios. O limite máximo permitido para o `tamanhoPagina` é de 30 registros por requisição para evitar travamentos).*
+*(Obs: `dataInicial`, `dataFinal` e `codigoModalidadeContratacao` são obrigatórios. O limite máximo permitido para o `limit` é de 50 registros por requisição. A API utiliza **Keyset Pagination (Cursor)** para alta performance).*
 
 **Exemplo de Resposta (JSON):**
-A API implementa metadados de paginação padronizados no escopo global (fora da chave `data`):
+A API implementa paginação por cursor (Keyset Pagination) no escopo global para lidar com grandes volumes de dados de forma escalável:
 ```json
 {
   "data": [
@@ -109,10 +112,12 @@ A API implementa metadados de paginação padronizados no escopo global (fora da
       ...
     }
   ],
-  "count": 1450,
-  "total_pages": 49
+  "count_page": 15,
+  "next_cursor": "eyJkYXRlIjoiMjAyNi0wOC0xNSIsIm51bWVyb19jb250cm9sZSI6Ii4uLiJ9",
+  "has_more": true
 }
 ```
+*Para buscar a próxima página, envie o valor de `next_cursor` no parâmetro `cursor` do payload. A navegação chega ao fim quando `has_more` for `false` ou `next_cursor` for `null`.*
 
 **Sobre o parâmetro `tipoData`:**
 - `"publicacao"` (Padrão): A busca pelas datas informadas será baseada na data original de publicação do edital.
