@@ -19,9 +19,9 @@ Focado em alto volume de ingestão de dados.
 - O `Scheduler` (Cron) aciona o comando `pncp:sync` diariamente de madrugada.
 - O Command despacha um Job Mestre: `SyncPncpDataJob`.
 - **Padrão Fan-Out**: O Mestre consulta a API do PNCP apenas para descobrir o total de páginas existentes. Em seguida, ele cria e enfileira um operário (`ProcessPncpPageJob`) para *cada página* existente.
-- **Tolerância a Falhas**: Cada operário roda em segundos. Se a rede oscilar, o Laravel isola a página que falhou e tenta novamente (até 5 vezes), sem prejudicar as demais páginas.
-- **Circuit Breaker**: Integrado com Redis, o sistema detecta erros `429 Too Many Requests` (Rate Limit da API do Governo) e imediatamente "abre o disjuntor", devolvendo os Jobs para a fila com uma pausa inteligente de 5 minutos, evitando bloqueios de IP e gasto de CPU.
-- **Bulk Upsert**: O operário baixa 500 licitações por vez e envia para a `SyncPublicContratationAction`. A Action executa um `PublicContratation::upsert()` no Postgres, inserindo e atualizando centenas de registros com apenas uma query SQL de alto desempenho.
+- **Tolerância a Falhas e Logs**: O sistema captura erros e "Poisoned Jobs" silenciosamente. Se a rede oscilar, o Laravel tenta novamente (até 5 vezes). Erros de Timeout, Rate Limiting (429) e Falhas Fatais geram Logs Estruturados em JSON para facilitar a depuração via DataDog/Elasticsearch sem poluir o log com Stack Traces gigantes.
+- **Circuit Breaker**: Integrado com Redis, o sistema detecta erros `429 Too Many Requests` (Rate Limit da API do Governo) e imediatamente "abre o disjuntor", devolvendo os Jobs para a fila com uma pausa inteligente de 5 minutos.
+- **Bulk Upsert**: O operário baixa páginas de 500 licitações do Governo e envia para a `SyncPublicContratationAction`. A Action executa um `PublicContratation::upsert()` no Postgres de forma massiva.
 
 ---
 
@@ -61,10 +61,10 @@ docker-compose exec php php artisan queue:work
 *(Para produção, utilize ferramentas como o Supervisor para manter o Worker de pé).*
 
 ### 4. Alimentando o Banco de Dados Manualmente
-O sistema já está configurado para rodar a cada madrugada (`routes/console.php`), mas você pode forçar a sincronização de dados executando:
 ```bash
 docker-compose exec php php artisan pncp:sync
 ```
+*(Obs: O sincronizador Mestre atual foi configurado para focar inicialmente e varrer apenas a Modalidade 6 - Pregão).*
 
 ---
 
@@ -87,7 +87,7 @@ Endpoint projetado para suportar buscas complexas enviando o payload via `body` 
   "uf": "SP",
   "codigoMunicipioIbge": 3543402,
   "pagina": 1,
-  "tamanhoPagina": 50,
+  "tamanhoPagina": 30,
   "poderId": "E",
   "esferaId": "M",
   "situacaoCompraId": 1,
@@ -96,7 +96,23 @@ Endpoint projetado para suportar buscas complexas enviando o payload via `body` 
   "fontesOrcamentarias": 2
 }
 ```
-*(Obs: `dataInicial`, `dataFinal` e `codigoModalidadeContratacao` são obrigatórios).*
+*(Obs: `dataInicial`, `dataFinal` e `codigoModalidadeContratacao` são obrigatórios. O limite máximo permitido para o `tamanhoPagina` é de 30 registros por requisição para evitar travamentos).*
+
+**Exemplo de Resposta (JSON):**
+A API implementa metadados de paginação padronizados no escopo global (fora da chave `data`):
+```json
+{
+  "data": [
+    {
+      "numeroControle": "12345/2026",
+      "processo": "0001/2026",
+      ...
+    }
+  ],
+  "count": 1450,
+  "total_pages": 49
+}
+```
 
 **Sobre o parâmetro `tipoData`:**
 - `"publicacao"` (Padrão): A busca pelas datas informadas será baseada na data original de publicação do edital.
