@@ -44,8 +44,8 @@ class SyncPncpCommand extends Command
                 codigoModalidadeContratacao: $modalidade,
                 uf: null,
                 codigoMunicipioIbge: null,
-                pagina: 1,
-                tamanhoPagina: 50
+                cursor: null,
+                limit: 50,
             );
 
             SyncPncpDataJob::dispatch($dto);
