@@ -3,6 +3,7 @@
 namespace App\Repositories;
 
 use App\DTOs\PublicContratations\GetPublicContratationsDTO;
+use App\DTOs\PublicContratations\GetRelevantContratationsDTO;
 use App\Models\PublicContratation;
 use Illuminate\Support\Collection;
 
@@ -43,7 +44,61 @@ class PublicContratationRepository
         // O cursor encoda o último (data_publicacao_pncp, numero_controle_pncp) recebido.
         $cursorData = $this->decodeCursor($dto->cursor);
 
-        if ($cursorData) {
+        if ($cursorData) 
+        {
+            $query->where(function ($q) use ($cursorData) {
+                $q->where('data_publicacao_pncp', '<', $cursorData['date'])
+                  ->orWhere(function ($q) use ($cursorData) {
+                      $q->where('data_publicacao_pncp', '=', $cursorData['date'])
+                        ->where('numero_controle_pncp', '>', $cursorData['numero_controle']);
+                  });
+            });
+        }
+
+        $data = $query
+            ->orderBy('data_publicacao_pncp', 'desc')
+            ->orderBy('numero_controle_pncp', 'asc')
+            ->limit($dto->limit)
+            ->get();
+
+        $nextCursor = $this->buildNextCursor($data, $dto->limit);
+
+        return [
+            'data'        => $data,
+            'count_page'  => $data->count(),
+            'next_cursor' => $nextCursor,
+            'has_more'    => $nextCursor !== null,
+        ];
+    }
+
+    /**
+     * Busca licitações relevantes baseadas num array de palavras chaves
+     */
+    public function getRelevantByKeywords(array $keywords, GetRelevantContratationsDTO $dto): array
+    {
+        if (empty($keywords)) {
+            return [
+                'data'        => collect([]),
+                'count_page'  => 0,
+                'next_cursor' => null,
+                'has_more'    => false,
+            ];
+        }
+
+        // tsquery format for OR: word1 | word2
+        $tsQueryStr = implode(' | ', $keywords);
+
+        $query = PublicContratation::query()
+            ->where('situacao_compra_id', 1) // Apenas registros ativos
+            ->whereRaw(
+                "to_tsvector('portuguese', objeto_compra) @@ to_tsquery('portuguese', ?)",
+                [$tsQueryStr]
+            );
+
+        $cursorData = $this->decodeCursor($dto->cursor);
+
+        if ($cursorData) 
+        {
             $query->where(function ($q) use ($cursorData) {
                 $q->where('data_publicacao_pncp', '<', $cursorData['date'])
                   ->orWhere(function ($q) use ($cursorData) {
