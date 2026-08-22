@@ -8,9 +8,11 @@ use Illuminate\Database\Eloquent\Collection;
 
 class UserKeywordRepository
 {
-    public function getByUserId(int $userId): Collection
+    public function listByUserId(int $userId): Collection
     {
-        return UserKeyword::where('user_id', $userId)->orderBy('keyword')->get();
+        return UserKeyword::where('user_id', $userId)
+            ->orderBy('keyword')
+            ->get();
     }
 
     public function saveOrUpdate(SaveUserKeywordDTO $dto): ?UserKeyword

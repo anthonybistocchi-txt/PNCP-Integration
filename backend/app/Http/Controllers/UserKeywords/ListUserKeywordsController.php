@@ -13,9 +13,9 @@ class ListUserKeywordsController extends Controller
         private ListUserKeywordsAction $action
     ) {}
 
-    public function get()
+    public function listByUserId()
     {
-        $keywords = $this->action->execute(Auth::id());
+        $keywords = $this->action->listByUserId(Auth::id());
 
         return response()->json([
             'data' => UserKeywordResource::collection($keywords),

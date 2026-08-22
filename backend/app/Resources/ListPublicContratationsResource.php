@@ -4,7 +4,7 @@ namespace App\Resources;
 
 use Illuminate\Http\Resources\Json\JsonResource;
 
-class GetPublicContratationsResource extends JsonResource
+class ListPublicContratationsResource extends JsonResource
 {
     /**
      * Transform the resource into an array.
@@ -51,3 +51,4 @@ class GetPublicContratationsResource extends JsonResource
         ];
     }
 }
+

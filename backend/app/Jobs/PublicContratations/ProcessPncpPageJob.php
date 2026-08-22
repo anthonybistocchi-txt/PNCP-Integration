@@ -3,7 +3,7 @@
 namespace App\Jobs\PublicContratations;
 
 use App\Actions\PublicContratations\SyncPublicContratationAction;
-use App\DTOs\PublicContratations\GetPublicContratationsDTO;
+use App\DTOs\PublicContratations\ListPublicContratationsDTO;
 use App\Integrations\PNCP\PncpClient;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -32,7 +32,7 @@ class ProcessPncpPageJob implements ShouldQueue
      * Create a new job instance.
      */
     public function __construct(
-        protected GetPublicContratationsDTO $dto,
+        protected ListPublicContratationsDTO $dto,
         protected int $pagina,
         protected int $tamanhoPagina
     ) {}
@@ -142,3 +142,4 @@ class ProcessPncpPageJob implements ShouldQueue
         }
     }
 }
+

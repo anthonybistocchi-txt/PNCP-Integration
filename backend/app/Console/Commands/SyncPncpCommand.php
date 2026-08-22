@@ -2,7 +2,7 @@
 
 namespace App\Console\Commands;
 
-use App\DTOs\PublicContratations\GetPublicContratationsDTO;
+use App\DTOs\PublicContratations\ListPublicContratationsDTO;
 use App\Jobs\PublicContratations\SyncPncpDataJob;
 use Illuminate\Console\Command;
 
@@ -38,7 +38,7 @@ class SyncPncpCommand extends Command
 
         foreach ($this->modalidadeId as $modalidade) 
         {
-            $dto = new GetPublicContratationsDTO(
+            $dto = new ListPublicContratationsDTO(
                 dataInicial: $dataInicial,
                 dataFinal: $dataFinal,
                 codigoModalidadeContratacao: $modalidade,
@@ -54,3 +54,4 @@ class SyncPncpCommand extends Command
         }
     }
 }
+

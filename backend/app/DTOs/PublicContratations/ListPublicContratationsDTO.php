@@ -2,7 +2,7 @@
 
 namespace App\DTOs\PublicContratations;
 
-final class GetPublicContratationsDTO
+final class ListPublicContratationsDTO
 {
     public function __construct(
         public readonly string  $dataInicial,
@@ -25,3 +25,4 @@ final class GetPublicContratationsDTO
         public readonly int     $limit   = 15,
     ) {}
 }
+

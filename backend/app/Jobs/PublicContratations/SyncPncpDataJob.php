@@ -3,7 +3,7 @@
 namespace App\Jobs\PublicContratations;
 
 use App\Actions\PublicContratations\SyncPublicContratationAction;
-use App\DTOs\PublicContratations\GetPublicContratationsDTO;
+use App\DTOs\PublicContratations\ListPublicContratationsDTO;
 use App\Integrations\PNCP\PncpClient;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -27,7 +27,7 @@ class SyncPncpDataJob implements ShouldQueue, ShouldBeUnique
     // Atrasos para retentativas naturais de falha
     public $backoff = [120, 300, 600];
 
-    public int $uniqueFor = 3600; // 1 hora de lock para evitar duplicidade
+    public int $uniqueFor = 5400; // 1 hora e meia de lock para evitar duplicidade
 
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
@@ -35,7 +35,7 @@ class SyncPncpDataJob implements ShouldQueue, ShouldBeUnique
      * Create a new job instance.
      */
     public function __construct(
-        protected GetPublicContratationsDTO $dto
+        protected ListPublicContratationsDTO $dto
     ) {}
 
     /**
@@ -141,3 +141,4 @@ class SyncPncpDataJob implements ShouldQueue, ShouldBeUnique
         }
     }
 }
+

@@ -2,28 +2,28 @@
 
 namespace App\Http\Controllers\PublicContratations;
 
-use App\Actions\PublicContratations\GetRelevantContratationsAction;
+use App\Actions\PublicContratations\ListRelevantContratationsAction;
 use App\Http\Controllers\Controller;
-use App\Http\Requests\PublicContratations\GetRelevantContratationsRequest;
-use App\Resources\GetPublicContratationsResource;
+use App\Http\Requests\PublicContratations\ListRelevantContratationsRequest;
+use App\Resources\ListPublicContratationsResource;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 
-class GetRelevantContratationsController extends Controller
+class ListRelevantContratationsController extends Controller
 {
     public function __construct(
-        private GetRelevantContratationsAction $action
+        private ListRelevantContratationsAction $action
     ) {}
 
-    public function get(GetRelevantContratationsRequest $request)
+    public function list(ListRelevantContratationsRequest $request)
     {
         $startedAt = now();
         $user = Auth::user();
 
         $dto    = $request->toDTO();
-        $result = $this->action->execute($user->id, $dto);
+        $result = $this->action->list($user->id, $dto);
 
-        $contratations = GetPublicContratationsResource::collection($result['data']);
+        $contratations = ListPublicContratationsResource::collection($result['data']);
 
         Log::info(json_encode([
             'event'       => 'API_RELEVANT_SEARCH_SUCCESS',
@@ -44,3 +44,4 @@ class GetRelevantContratationsController extends Controller
         ]);
     }
 }
+

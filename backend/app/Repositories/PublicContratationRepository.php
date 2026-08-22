@@ -2,8 +2,8 @@
 
 namespace App\Repositories;
 
-use App\DTOs\PublicContratations\GetPublicContratationsDTO;
-use App\DTOs\PublicContratations\GetRelevantContratationsDTO;
+use App\DTOs\PublicContratations\ListPublicContratationsDTO;
+use App\DTOs\PublicContratations\ListRelevantContratationsDTO;
 use App\Models\PublicContratation;
 use Illuminate\Support\Collection;
 
@@ -19,7 +19,7 @@ class PublicContratationRepository
      * Formato do cursor: Base64(JSON({last_date, last_numero_controle}))
      * Ordenação estável: data_publicacao_pncp DESC, numero_controle_pncp ASC
      */
-    public function getByFilters(GetPublicContratationsDTO $dto): array
+    public function getByFilters(ListPublicContratationsDTO $dto): array
     {
         $query = PublicContratation::query()
             ->when($dto->dataInicial && $dto->dataFinal, function ($query) use ($dto) {
@@ -74,17 +74,8 @@ class PublicContratationRepository
     /**
      * Busca licitações relevantes baseadas num array de palavras chaves
      */
-    public function getRelevantByKeywords(array $keywords, GetRelevantContratationsDTO $dto): array
+    public function getRelevantByKeywords(array $keywords, ListRelevantContratationsDTO $dto): array
     {
-        if (empty($keywords)) {
-            return [
-                'data'        => collect([]),
-                'count_page'  => 0,
-                'next_cursor' => null,
-                'has_more'    => false,
-            ];
-        }
-
         // tsquery format for OR: word1 | word2
         $tsQueryStr = implode(' | ', $keywords);
 
@@ -172,3 +163,4 @@ class PublicContratationRepository
         return "{$year}-{$month}-{$day} {$time}";
     }
 }
+

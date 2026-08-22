@@ -2,24 +2,25 @@
 
 namespace App\Actions\PublicContratations;
 
-use App\DTOs\PublicContratations\GetRelevantContratationsDTO;
+use App\DTOs\PublicContratations\ListRelevantContratationsDTO;
 use App\Services\PublicContratations\PublicContratationsService;
 use App\Services\UserKeywords\UserKeywordService;
 
-class GetRelevantContratationsAction
+class ListRelevantContratationsAction
 {
     public function __construct(
         private PublicContratationsService $publicContratationsService,
         private UserKeywordService $keywordService
     ) {}
 
-    public function execute(int $userId, GetRelevantContratationsDTO $dto): array
+    public function listByUserId(int $userId, ListRelevantContratationsDTO $dto): array
     {
-        $userKeywords = $this->keywordService->getByUserId($userId);
-        
+        $userKeywords = $this->keywordService->listByUserId($userId);
+
         $keywords = $userKeywords->pluck('keyword')->toArray();
 
         return $this->publicContratationsService->getRelevantByKeywords($keywords, $dto);
     }
 }
+
 

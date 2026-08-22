@@ -10,7 +10,7 @@ class DeleteUserKeywordAction
         private UserKeywordService $service
     ) {}
 
-    public function execute(int $id, int $userId): void
+    public function delete(int $id, int $userId): void
     {
         $this->service->delete($id, $userId);
     }

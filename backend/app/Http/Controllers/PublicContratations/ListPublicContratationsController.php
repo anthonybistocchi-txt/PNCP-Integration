@@ -3,26 +3,26 @@
 namespace App\Http\Controllers\PublicContratations;
 
 use App\Http\Controllers\Controller;
-use App\Http\Requests\PublicContratations\GetPublicContratationsRequest;
-use App\Resources\GetPublicContratationsResource;
+use App\Http\Requests\PublicContratations\ListPublicContratationsRequest;
+use App\Resources\ListPublicContratationsResource;
 use App\Services\PublicContratations\PublicContratationsService;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 
-class GetPublicContratationsController extends Controller
+class ListPublicContratationsController extends Controller
 {
     public function __construct(
         private PublicContratationsService $service
     ) {}
 
-    public function get(GetPublicContratationsRequest $request)
+    public function list(ListPublicContratationsRequest $request)
     {
         $startedAt = now();
 
         $dto    = $request->toDTO();
-        $result = $this->service->get($dto);
+        $result = $this->service->list($dto);
 
-        $contratations = GetPublicContratationsResource::collection($result['data']);
+        $contratations = ListPublicContratationsResource::collection($result['data']);
 
         Log::info(json_encode([
             'event'       => 'API_READ_SUCCESS',
@@ -43,3 +43,4 @@ class GetPublicContratationsController extends Controller
         ]);
     }
 }
+

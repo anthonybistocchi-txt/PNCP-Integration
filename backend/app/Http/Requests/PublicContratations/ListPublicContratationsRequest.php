@@ -2,10 +2,10 @@
 
 namespace App\Http\Requests\PublicContratations;
 
-use App\DTOs\PublicContratations\GetPublicContratationsDTO;
+use App\DTOs\PublicContratations\ListPublicContratationsDTO;
 use Illuminate\Foundation\Http\FormRequest;
 
-class GetPublicContratationsRequest extends FormRequest
+class ListPublicContratationsRequest extends FormRequest
 {
     /**
      * Determine if the user is authorized to make this request.
@@ -40,11 +40,11 @@ class GetPublicContratationsRequest extends FormRequest
         ];
     }
 
-    public function toDTO(): GetPublicContratationsDTO
+    public function toDTO(): ListPublicContratationsDTO
     {
         $validated = $this->validated();
 
-        return new GetPublicContratationsDTO(
+        return new ListPublicContratationsDTO(
             dataInicial:                 $validated['dataInicial'],
             dataFinal:                   $validated['dataFinal'],
             codigoModalidadeContratacao: (int) $validated['codigoModalidadeContratacao'],
@@ -78,3 +78,4 @@ class GetPublicContratationsRequest extends FormRequest
         ];
     }
 }
+

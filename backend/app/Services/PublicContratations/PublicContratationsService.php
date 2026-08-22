@@ -2,8 +2,8 @@
 
 namespace App\Services\PublicContratations;
 
-use App\DTOs\PublicContratations\GetPublicContratationsDTO;
-use App\DTOs\PublicContratations\GetRelevantContratationsDTO;
+use App\DTOs\PublicContratations\ListPublicContratationsDTO;
+use App\DTOs\PublicContratations\ListRelevantContratationsDTO;
 use App\Repositories\PublicContratationRepository;
 
 class PublicContratationsService
@@ -15,7 +15,7 @@ class PublicContratationsService
     /**
      * Ponto de entrada do serviço: busca no banco local e engatilha o job de sincronização.
      */
-    public function get(GetPublicContratationsDTO $dto): array
+    public function list(ListPublicContratationsDTO $dto): array
     {
         return $this->repository->getByFilters($dto);
     }
@@ -23,7 +23,7 @@ class PublicContratationsService
     /**
      * Busca contratações relevantes por palavras-chave.
      */
-    public function getRelevantByKeywords(array $keywords, GetRelevantContratationsDTO $dto): array
+    public function getRelevantByKeywords(array $keywords, ListRelevantContratationsDTO $dto): array
     {
         if (empty($keywords)) {
             return [
@@ -36,3 +36,4 @@ class PublicContratationsService
         return $this->repository->getRelevantByKeywords($keywords, $dto);
     }
 }
+

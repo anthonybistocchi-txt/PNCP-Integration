@@ -11,8 +11,8 @@ class ListUserKeywordsAction
         private UserKeywordService $service
     ) {}
 
-    public function execute(int $userId): Collection
+    public function listByUserId(int $userId): Collection
     {
-        return $this->service->getByUserId($userId);
+        return $this->service->listByUserId($userId);
     }
 }

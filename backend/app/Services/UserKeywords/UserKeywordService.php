@@ -14,9 +14,15 @@ class UserKeywordService
         private UserKeywordRepository $repository
     ) {}
 
-    public function getByUserId(int $userId): Collection
+    public function listByUserId(int $userId): Collection
     {
-        return $this->repository->getByUserId($userId);
+        $keywords = $this->repository->listByUserId($userId);
+
+        if ($keywords->isEmpty()) {
+            throw new Exception("Nenhuma palavra-chave encontrada para o usuário.", 404);
+        }
+
+        return $keywords;
     }
 
     public function saveOrUpdate(SaveUserKeywordDTO $dto): UserKeyword

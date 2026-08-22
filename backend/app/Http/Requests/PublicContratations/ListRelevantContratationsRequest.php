@@ -2,10 +2,10 @@
 
 namespace App\Http\Requests\PublicContratations;
 
-use App\DTOs\PublicContratations\GetRelevantContratationsDTO;
+use App\DTOs\PublicContratations\ListRelevantContratationsDTO;
 use Illuminate\Foundation\Http\FormRequest;
 
-class GetRelevantContratationsRequest extends FormRequest
+class ListRelevantContratationsRequest extends FormRequest
 {
     public function authorize(): bool
     {
@@ -28,13 +28,14 @@ class GetRelevantContratationsRequest extends FormRequest
         ];
     }
 
-    public function toDTO(): GetRelevantContratationsDTO
+    public function toDTO(): ListRelevantContratationsDTO
     {
         $validated = $this->validated();
 
-        return new GetRelevantContratationsDTO(
+        return new ListRelevantContratationsDTO(
             cursor: $validated['cursor'] ?? null,
             limit:  (int) ($validated['limit'] ?? 15)
         );
     }
 }
+

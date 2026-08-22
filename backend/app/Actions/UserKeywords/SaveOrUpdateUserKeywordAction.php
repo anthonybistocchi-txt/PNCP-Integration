@@ -12,7 +12,7 @@ class SaveOrUpdateUserKeywordAction
         private UserKeywordService $service
     ) {}
 
-    public function execute(SaveUserKeywordDTO $dto): UserKeyword
+    public function saveOrUpdate(SaveUserKeywordDTO $dto): UserKeyword
     {
         return $this->service->saveOrUpdate($dto);
     }
