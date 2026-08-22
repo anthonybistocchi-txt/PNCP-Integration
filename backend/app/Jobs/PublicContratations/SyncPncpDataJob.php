@@ -7,6 +7,7 @@ use App\DTOs\PublicContratations\GetPublicContratationsDTO;
 use App\Integrations\PNCP\PncpClient;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
@@ -15,7 +16,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Http\Client\RequestException;
 use App\Jobs\PublicContratations\ProcessPncpPageJob;
 
-class SyncPncpDataJob implements ShouldQueue
+class SyncPncpDataJob implements ShouldQueue, ShouldBeUnique
 {
     // Dá 5 minutos (300 segundos) de tolerância antes de matar o Job
     public $timeout = 300;
@@ -25,6 +26,8 @@ class SyncPncpDataJob implements ShouldQueue
 
     // Atrasos para retentativas naturais de falha
     public $backoff = [120, 300, 600];
+
+    public int $uniqueFor = 3600; // 1 hora de lock para evitar duplicidade
 
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
@@ -40,6 +43,8 @@ class SyncPncpDataJob implements ShouldQueue
      */
     public function handle(PncpClient $client): void
     {
+        $startedAt = now();
+
         // 1. Verificação global do Circuit Breaker antes de qualquer requisição
         if (Cache::has('pncp_circuit_breaker_until')) 
         {
@@ -89,12 +94,17 @@ class SyncPncpDataJob implements ShouldQueue
                     ->delay(now()->addSeconds($delayInSeconds));
             }
 
+            $finishedAt = now();
+
             Log::info(json_encode([
-                'event'           => 'PNCP_MASTER_JOB_COMPLETED',
-                'total_pages'     => $totalPaginas,
-                'total_records'   => $response->totalRegistros,
-                'jobs_dispatched' => $totalPaginas,
-                'dto'             => (array) $this->dto,
+                'event'                   => 'SYNC_CYCLE_COMPLETED',
+                'modalidade'              => $this->dto->codigoModalidadeContratacao,
+                'total_pages_dispatched'  => $totalPaginas,
+                'total_records_processed' => $response->totalRegistros,
+                'duration_minutes'        => $startedAt->diffInMinutes($finishedAt),
+                'started_at'              => $startedAt->toIso8601String(),
+                'finished_at'             => $finishedAt->toIso8601String(),
+                'dto'                     => (array) $this->dto,
             ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
             
         } 
