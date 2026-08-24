@@ -1,10 +1,12 @@
 <?php
 
-namespace App\Repositories;
+namespace App\Repositories\PublicContratations;
 
+use App\DTOs\Paginate\PaginatedResultDTO;
+use App\DTOs\PublicContratations\CursorDTO;
 use App\DTOs\PublicContratations\ListPublicContratationsDTO;
 use App\DTOs\PublicContratations\ListRelevantContratationsDTO;
-use App\Models\PublicContratation;
+use App\Models\PublicContratations\PublicContratation;
 use Illuminate\Support\Collection;
 
 class PublicContratationRepository
@@ -19,7 +21,7 @@ class PublicContratationRepository
      * Formato do cursor: Base64(JSON({last_date, last_numero_controle}))
      * Ordenação estável: data_publicacao_pncp DESC, numero_controle_pncp ASC
      */
-    public function getByFilters(ListPublicContratationsDTO $dto): array
+    public function list(ListPublicContratationsDTO $dto): PaginatedResultDTO
     {
         $query = PublicContratation::query()
             ->when($dto->dataInicial && $dto->dataFinal, function ($query) use ($dto) {
@@ -44,13 +46,33 @@ class PublicContratationRepository
         // O cursor encoda o último (data_publicacao_pncp, numero_controle_pncp) recebido.
         $cursorData = $this->decodeCursor($dto->cursor);
 
+        // Clonamos a query base ANTES de aplicar orderBy, limit ou o cursor
+        // para pegar o total real de registros que batem com os filtros principais.
+        $baseQuery = clone $query;
+        
+        $count = $baseQuery->count();
+        $page = 1;
+
         if ($cursorData) 
         {
-            $query->where(function ($q) use ($cursorData) {
-                $q->where('data_publicacao_pncp', '<', $cursorData['date'])
+            // Para descobrir em qual "página" estamos,
+            // contamos quantos registros ficaram para trás (antes do cursor na ordenação).
+            $skippedQuery = clone $baseQuery;
+            $skippedCount = $skippedQuery->where(function ($q) use ($cursorData) {
+                $q->where('data_publicacao_pncp', '>', $cursorData->date)
                   ->orWhere(function ($q) use ($cursorData) {
-                      $q->where('data_publicacao_pncp', '=', $cursorData['date'])
-                        ->where('numero_controle_pncp', '>', $cursorData['numero_controle']);
+                      $q->where('data_publicacao_pncp', '=', $cursorData->date)
+                        ->where('numero_controle_pncp', '<=', $cursorData->numero_controle);
+                  });
+            })->count();
+
+            $page = (int) floor($skippedCount / $dto->limit) + 1;
+
+            $query->where(function ($q) use ($cursorData) {
+                $q->where('data_publicacao_pncp', '<', $cursorData->date)
+                  ->orWhere(function ($q) use ($cursorData) {
+                      $q->where('data_publicacao_pncp', '=', $cursorData->date)
+                        ->where('numero_controle_pncp', '>', $cursorData->numero_controle);
                   });
             });
         }
@@ -63,18 +85,20 @@ class PublicContratationRepository
 
         $nextCursor = $this->buildNextCursor($data, $dto->limit);
 
-        return [
-            'data'        => $data,
-            'count_page'  => $data->count(),
-            'next_cursor' => $nextCursor,
-            'has_more'    => $nextCursor !== null,
-        ];
+        return new PaginatedResultDTO(
+            data:        $data,
+            page:        $page,
+            count_page:  $data->count(),
+            count:       $count,
+            next_cursor: $nextCursor,
+            has_more:    $nextCursor !== null,
+        );
     }
 
     /**
      * Busca licitações relevantes baseadas num array de palavras chaves
      */
-    public function getRelevantByKeywords(array $keywords, ListRelevantContratationsDTO $dto): array
+    public function getRelevantByKeywords(array $keywords, ListRelevantContratationsDTO $dto): PaginatedResultDTO
     {
         // tsquery format for OR: word1 | word2
         $tsQueryStr = implode(' | ', $keywords);
@@ -88,13 +112,28 @@ class PublicContratationRepository
 
         $cursorData = $this->decodeCursor($dto->cursor);
 
+        $baseQuery = clone $query;
+        $count = $baseQuery->count();
+        $page = 1;
+
         if ($cursorData) 
         {
-            $query->where(function ($q) use ($cursorData) {
-                $q->where('data_publicacao_pncp', '<', $cursorData['date'])
+            $skippedQuery = clone $baseQuery;
+            $skippedCount = $skippedQuery->where(function ($q) use ($cursorData) {
+                $q->where('data_publicacao_pncp', '>', $cursorData->date)
                   ->orWhere(function ($q) use ($cursorData) {
-                      $q->where('data_publicacao_pncp', '=', $cursorData['date'])
-                        ->where('numero_controle_pncp', '>', $cursorData['numero_controle']);
+                      $q->where('data_publicacao_pncp', '=', $cursorData->date)
+                        ->where('numero_controle_pncp', '<=', $cursorData->numero_controle);
+                  });
+            })->count();
+
+            $page = (int) floor($skippedCount / $dto->limit) + 1;
+
+            $query->where(function ($q) use ($cursorData) {
+                $q->where('data_publicacao_pncp', '<', $cursorData->date)
+                  ->orWhere(function ($q) use ($cursorData) {
+                      $q->where('data_publicacao_pncp', '=', $cursorData->date)
+                        ->where('numero_controle_pncp', '>', $cursorData->numero_controle);
                   });
             });
         }
@@ -107,12 +146,14 @@ class PublicContratationRepository
 
         $nextCursor = $this->buildNextCursor($data, $dto->limit);
 
-        return [
-            'data'        => $data,
-            'count_page'  => $data->count(),
-            'next_cursor' => $nextCursor,
-            'has_more'    => $nextCursor !== null,
-        ];
+        return new PaginatedResultDTO(
+            data:        $data,
+            page:        $page,
+            count_page:  $data->count(),
+            count:       $count,
+            next_cursor: $nextCursor,
+            has_more:    $nextCursor !== null,
+        );
     }
 
     /**
@@ -137,7 +178,7 @@ class PublicContratationRepository
      * Decodifica o cursor recebido do cliente.
      * Retorna null se o cursor for inválido ou ausente (primeira página).
      */
-    private function decodeCursor(?string $cursor): ?array
+    private function decodeCursor(?string $cursor): ?CursorDTO
     {
         if (!$cursor) {
             return null;
@@ -149,7 +190,10 @@ class PublicContratationRepository
             return null;
         }
 
-        return $decoded;
+        return new CursorDTO(
+            date:            $decoded['date'],
+            numero_controle: $decoded['numero_controle'],
+        );
     }
 
     private function formatDate(string $dateString, string $time): string

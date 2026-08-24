@@ -2,14 +2,14 @@
 
 namespace App\Actions\User;
 
-use App\DTOs\AuthDTO;
-use App\Models\User;
+use App\DTOs\Auth\AuthDTO;
+use App\Models\Auth\User;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 
 class CreateUserAction
 {
-    public function execute(AuthDTO $dto): User
+    public function create(AuthDTO $dto): User
     {
         return User::create([
             'name'         => $dto->name,

@@ -3,7 +3,7 @@
 namespace App\Actions\UserKeywords;
 
 use App\DTOs\UserKeywords\SaveUserKeywordDTO;
-use App\Models\UserKeyword;
+use App\Models\UserKeywords\UserKeyword;
 use App\Services\UserKeywords\UserKeywordService;
 
 class SaveOrUpdateUserKeywordAction

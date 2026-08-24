@@ -15,6 +15,7 @@ class SaveUserKeywordRequest extends FormRequest
     public function rules(): array
     {
         return [
+            'id'      => 'nullable|int',
             'keyword' => 'required|string|max:255',
         ];
     }
@@ -22,6 +23,7 @@ class SaveUserKeywordRequest extends FormRequest
     public function messages(): array
     {
         return [
+            'id.nullable'      => 'O ID deve ser um número inteiro.',
             'keyword.required' => 'A palavra-chave é obrigatória.',
             'keyword.string'   => 'A palavra-chave deve ser um texto.',
             'keyword.max'      => 'A palavra-chave não pode ter mais de 255 caracteres.',
@@ -33,7 +35,7 @@ class SaveUserKeywordRequest extends FormRequest
         return new SaveUserKeywordDTO(
             userId: $userId,
             keyword: $this->validated('keyword'),
-            id: $id
+            id: $this->validated('id') ?? null
         );
     }
 }

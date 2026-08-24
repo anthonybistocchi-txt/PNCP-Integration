@@ -5,7 +5,8 @@ namespace App\Http\Controllers\UserKeywords;
 use App\Actions\UserKeywords\SaveOrUpdateUserKeywordAction;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\UserKeywords\SaveUserKeywordRequest;
-use App\Resources\UserKeywordResource;
+use App\Resources\UserKeywords\UserKeywordResource;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
 
 class SaveOrUpdateUserKeywordController extends Controller
@@ -14,10 +15,10 @@ class SaveOrUpdateUserKeywordController extends Controller
         private SaveOrUpdateUserKeywordAction $action
     ) {}
 
-    public function saveOrUpdate(SaveUserKeywordRequest $request, ?int $id = null)
+    public function saveOrUpdate(SaveUserKeywordRequest $request, ?int $id = null): JsonResponse
     {
         $dto     = $request->toDTO(Auth::id(), $id);
-        $keyword = $this->action->execute($dto);
+        $keyword = $this->action->saveOrUpdate($dto);
 
         $status  = $id ? 200 : 201;
         $msg     = $id ? 'Palavra-chave atualizada com sucesso.' : 'Palavra-chave cadastrada com sucesso.';

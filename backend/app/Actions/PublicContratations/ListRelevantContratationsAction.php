@@ -13,7 +13,7 @@ class ListRelevantContratationsAction
         private UserKeywordService $keywordService
     ) {}
 
-    public function listByUserId(int $userId, ListRelevantContratationsDTO $dto): array
+    public function listByUserId(int $userId, ListRelevantContratationsDTO $dto)
     {
         $userKeywords = $this->keywordService->listByUserId($userId);
 

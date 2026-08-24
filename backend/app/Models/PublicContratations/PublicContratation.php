@@ -1,12 +1,15 @@
 <?php
 
-namespace App\Models;
+namespace App\Models\PublicContratations;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 
 class PublicContratation extends Model
 {
+    use HasFactory;
+    
     // A chave primária não é um ID auto increment e é uma string
     protected $primaryKey = 'numero_controle_pncp';
     public $incrementing = false;

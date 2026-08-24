@@ -3,8 +3,8 @@
 namespace App\Services\UserKeywords;
 
 use App\DTOs\UserKeywords\SaveUserKeywordDTO;
-use App\Models\UserKeyword;
-use App\Repositories\UserKeywordRepository;
+use App\Models\UserKeywords\UserKeyword;
+use App\Repositories\UserKeywords\UserKeywordRepository;
 use Exception;
 use Illuminate\Database\Eloquent\Collection;
 

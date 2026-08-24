@@ -1,7 +1,7 @@
 <?php
 
-use App\Http\Controllers\AuthController;
-use App\Http\Controllers\HealthCheckController;
+use App\Http\Controllers\Auth\AuthController;
+use App\Http\Controllers\Infra\HealthCheckController;
 use App\Http\Controllers\PublicContratations\ListPublicContratationsController;
 use App\Http\Controllers\PublicContratations\ListRelevantContratationsController;
 use App\Http\Controllers\UserKeywords\SaveOrUpdateUserKeywordController;
@@ -17,7 +17,7 @@ Route::post('auth/register', [AuthController::class, 'register'])->middleware('v
 Route::middleware('auth.api')->group(function () {
 
     Route::prefix('v1/keywords')->group(function () {
-        Route::get('/', [ListUserKeywordsController::class, 'list'])->middleware('throttle:60,1');
+        Route::get('/', [ListUserKeywordsController::class, 'listByUserId'])->middleware('throttle:60,1');
         Route::post('/', [SaveOrUpdateUserKeywordController::class, 'saveOrUpdate'])->middleware('throttle:60,1');
         Route::put('/{id}', [SaveOrUpdateUserKeywordController::class, 'saveOrUpdate'])->middleware('throttle:60,1');
         Route::delete('/{id}', [DeleteUserKeywordController::class, 'delete'])->middleware('throttle:60,1');

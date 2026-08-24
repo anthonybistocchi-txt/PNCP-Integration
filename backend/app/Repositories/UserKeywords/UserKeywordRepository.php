@@ -1,9 +1,9 @@
 <?php
 
-namespace App\Repositories;
+namespace App\Repositories\UserKeywords;
 
 use App\DTOs\UserKeywords\SaveUserKeywordDTO;
-use App\Models\UserKeyword;
+use App\Models\UserKeywords\UserKeyword;
 use Illuminate\Database\Eloquent\Collection;
 
 class UserKeywordRepository
@@ -11,7 +11,7 @@ class UserKeywordRepository
     public function listByUserId(int $userId): Collection
     {
         return UserKeyword::where('user_id', $userId)
-            ->orderBy('keyword')
+            ->orderBy('id')
             ->get();
     }
 

@@ -2,7 +2,7 @@
 
 namespace App\Actions\PublicContratations;
 
-use App\Models\PublicContratation;
+use App\Models\PublicContratations\PublicContratation;
 use Illuminate\Support\Facades\Log;
 
 class SyncPublicContratationAction
