@@ -2,7 +2,7 @@
 
 namespace Database\Seeders;
 
-use App\Models\User;
+use App\Models\Auth\User;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 
@@ -18,6 +18,7 @@ class DatabaseSeeder extends Seeder
         // Chama a seeder que acabamos de criar
         $this->call([
             AdminUserSeeder::class,
+            PublicContratationSeeder::class,
         ]);
         
         // Mantém a criação do usuário de teste original se desejar
