@@ -1,9 +1,10 @@
 <?php
 
-namespace App\Http\Controllers;
+namespace App\Http\Controllers\Auth;
 
 use App\Actions\User\CreateUserAction;
-use App\Http\Requests\AuthRequest;
+use App\Http\Controllers\Controller;
+use App\Http\Requests\Auth\AuthRequest;
 use Illuminate\Http\JsonResponse;
 
 class AuthController extends Controller
@@ -14,11 +15,11 @@ class AuthController extends Controller
 
     public function register(AuthRequest $request): JsonResponse
     {
-        $user = $this->createUserAction->execute($request->toDTO());
+        $user = $this->createUserAction->create($request->toDTO());
 
         return response()->json([
             'message' => 'Usuário criado com sucesso',
-            'api_key' => $user->api_key,
+            'data'    => $user,
         ], 201);
     }
 }

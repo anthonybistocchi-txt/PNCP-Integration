@@ -19,8 +19,9 @@ Focado em alto volume de ingestão de dados.
 - O `Scheduler` (Cron) aciona o comando `pncp:sync` diariamente de madrugada.
 - O Command despacha um Job Mestre: `SyncPncpDataJob`.
 - **Padrão Fan-Out**: O Mestre consulta a API do PNCP apenas para descobrir o total de páginas existentes. Em seguida, ele cria e enfileira um operário (`ProcessPncpPageJob`) para *cada página* existente.
-- **Tolerância a Falhas**: Cada operário roda em segundos. Se a rede oscilar, o Laravel isola a página que falhou e tenta novamente (até 5 vezes), sem prejudicar as demais páginas.
-- **Bulk Upsert**: O operário baixa 500 licitações por vez e envia para a `SyncPublicContratationAction`. A Action executa um `PublicContratation::upsert()` no Postgres, inserindo e atualizando centenas de registros com apenas uma query SQL de alto desempenho.
+- **Tolerância a Falhas e Logs**: O sistema captura erros e "Poisoned Jobs" silenciosamente. Se a rede oscilar, o Laravel tenta novamente (até 5 vezes). Erros de Timeout, Rate Limiting (429) e Falhas Fatais geram Logs Estruturados em JSON para facilitar a depuração via DataDog/Elasticsearch sem poluir o log com Stack Traces gigantes.
+- **Circuit Breaker**: Integrado com Redis, o sistema detecta erros `429 Too Many Requests` (Rate Limit da API do Governo) e imediatamente "abre o disjuntor", devolvendo os Jobs para a fila com uma pausa inteligente de 5 minutos.
+- **Bulk Upsert**: O operário baixa páginas de 50 licitações do Governo e envia para a `SyncPublicContratationAction`. A Action executa um `PublicContratation::upsert()` no Postgres de forma massiva.
 
 ---
 
@@ -28,6 +29,7 @@ Focado em alto volume de ingestão de dados.
 - **PHP 8.2+**
 - **Laravel 11**
 - **PostgreSQL** (Armazenamento Relacional)
+- **Redis** (Cache em memória de altíssima velocidade para Rate Limiting)
 - **Docker & Docker Compose** (Containerização Completa)
 - **Padrões**: DTOs (Data Transfer Objects), FormRequests, Services, Repositories, Resources, Fan-Out Jobs.
 
@@ -43,11 +45,12 @@ docker-compose up -d
 Isso iniciará:
 - Container do PHP-FPM / Nginx (Backend Laravel)
 - Container do PostgreSQL (Banco de Dados)
+- Container do Redis (Cache/Circuit Breaker)
 
 ### 2. Configurando o Banco de Dados
-Gere a estrutura inicial executando as migrations dentro do container do PHP:
+Gere a estrutura inicial e o seu Usuário Admin (com a `API_KEY` definida no seu `.env`) executando:
 ```bash
-docker-compose exec php php artisan migrate
+docker-compose exec php php artisan migrate --seed
 ```
 
 ### 3. Rodando o Worker da Fila
@@ -58,14 +61,17 @@ docker-compose exec php php artisan queue:work
 *(Para produção, utilize ferramentas como o Supervisor para manter o Worker de pé).*
 
 ### 4. Alimentando o Banco de Dados Manualmente
-O sistema já está configurado para rodar a cada madrugada (`routes/console.php`), mas você pode forçar a sincronização de dados executando:
 ```bash
 docker-compose exec php php artisan pncp:sync
 ```
+*(Obs: O sincronizador Mestre atual foi configurado para focar inicialmente e varrer apenas a Modalidade 6 - Pregão).*
 
 ---
 
 ## 📚 Endpoints da API
+
+### `GET /api/healthz`
+Endpoint público para verificação de saúde da aplicação (Health Check). Retorna o status de conexão com o Banco de Dados e com o Redis. Ideal para uso com Docker Healthcheck ou serviços de monitoramento.
 
 ### `QUERY /api/contracts`
 Endpoint projetado para suportar buscas complexas enviando o payload via `body` ao invés de sobrecarregar a URL. Utiliza o método HTTP `QUERY`.
@@ -80,10 +86,11 @@ Endpoint projetado para suportar buscas complexas enviando o payload via `body` 
   "dataInicial": "20260101",
   "dataFinal": "20260815",
   "codigoModalidadeContratacao": 6,
+  "tipoData": "publicacao", 
   "uf": "SP",
   "codigoMunicipioIbge": 3543402,
-  "pagina": 1,
-  "tamanhoPagina": 50,
+  "limit": 15,
+  "cursor": null,
   "poderId": "E",
   "esferaId": "M",
   "situacaoCompraId": 1,
@@ -92,7 +99,29 @@ Endpoint projetado para suportar buscas complexas enviando o payload via `body` 
   "fontesOrcamentarias": 2
 }
 ```
-*(Obs: `dataInicial`, `dataFinal` e `codigoModalidadeContratacao` são obrigatórios).*
+*(Obs: `dataInicial`, `dataFinal` e `codigoModalidadeContratacao` são obrigatórios. O limite máximo permitido para o `limit` é de 50 registros por requisição. A API utiliza **Keyset Pagination (Cursor)** para alta performance).*
+
+**Exemplo de Resposta (JSON):**
+A API implementa paginação por cursor (Keyset Pagination) no escopo global para lidar com grandes volumes de dados de forma escalável:
+```json
+{
+  "data": [
+    {
+      "numeroControle": "12345/2026",
+      "processo": "0001/2026",
+      ...
+    }
+  ],
+  "count_page": 15,
+  "next_cursor": "eyJkYXRlIjoiMjAyNi0wOC0xNSIsIm51bWVyb19jb250cm9sZSI6Ii4uLiJ9",
+  "has_more": true
+}
+```
+*Para buscar a próxima página, envie o valor de `next_cursor` no parâmetro `cursor` do payload. A navegação chega ao fim quando `has_more` for `false` ou `next_cursor` for `null`.*
+
+**Sobre o parâmetro `tipoData`:**
+- `"publicacao"` (Padrão): A busca pelas datas informadas será baseada na data original de publicação do edital.
+- `"atualizacao"`: A busca pelas datas informadas olhará para as licitações que **sofreram alterações** no PNCP nesse intervalo (ex: um edital de janeiro que foi atualizado hoje).
 
 ---
 

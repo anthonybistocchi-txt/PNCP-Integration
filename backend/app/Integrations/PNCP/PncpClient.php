@@ -7,27 +7,32 @@ use Illuminate\Support\Facades\Log;
 
 class PncpClient
 {
-    private string $baseUrl = 'https://pncp.gov.br/api/consulta/v1/contratacoes/publicacao';
+    private string $baseUrlPublicacao = 'https://pncp.gov.br/api/consulta/v1/contratacoes/publicacao';
+    private string $baseUrlAtualizacao = 'https://pncp.gov.br/api/consulta/v1/contratacoes/atualizacao';
 
     private string $baseUrlDocumentos = 'https://pncp.gov.br/api/pncp/v1/orgaos';
 
     /**
      * Busca licitações no PNCP com base nos filtros
      */
-    public function getContratacoes(array $queryParams = []): ?object
+    public function getContratacoes(array $queryParams = [], bool $porAtualizacao = true): ?object
     {
+        $url = $porAtualizacao ? $this->baseUrlAtualizacao : $this->baseUrlPublicacao;
+
         $response = Http::timeout(60)
             ->retry(3, 2000)
             ->withHeaders([
                 'Accept' => 'application/json',
             ])
-            ->get($this->baseUrl, $queryParams);
+            ->get($url, $queryParams);
 
-        if ($response->successful()) {
+        if ($response->successful()) 
+        {
             return json_decode($response->body());
         }
 
-        if ($response->status() === 429) {
+        if ($response->status() === 429) 
+        {
             $response->throw();
         }
 
@@ -48,13 +53,15 @@ class PncpClient
             ])
             ->get($this->baseUrlDocumentos . "/{$cnpj}/compras/{$ano}/{$sequencial}/arquivos");
 
-        if ($response->successful()) {
+        if ($response->successful()) 
+        {
             $arquivos = json_decode($response->body(), true);
             // Retorna array de arquivos ou vazio se não houver
             return is_array($arquivos) ? $arquivos : [];
         }
 
-        if ($response->status() === 429) {
+        if ($response->status() === 429) 
+        {
             $response->throw();
         }
 

@@ -2,10 +2,10 @@
 
 namespace App\Services\PublicContratations;
 
-use App\DTOs\PublicContratations\GetPublicContratationsDTO;
-use App\Jobs\PublicContratations\SyncPncpDataJob;
-use App\Repositories\PublicContratationRepository;
-use Illuminate\Database\Eloquent\Collection;
+use App\DTOs\Paginate\PaginatedResultDTO;
+use App\DTOs\PublicContratations\ListPublicContratationsDTO;
+use App\DTOs\PublicContratations\ListRelevantContratationsDTO;
+use App\Repositories\PublicContratations\PublicContratationRepository;
 
 class PublicContratationsService
 {
@@ -16,10 +16,27 @@ class PublicContratationsService
     /**
      * Ponto de entrada do serviço: busca no banco local e engatilha o job de sincronização.
      */
-    public function get(GetPublicContratationsDTO $dto): Collection
+    public function list(ListPublicContratationsDTO $dto): PaginatedResultDTO
     {
-        // 1. O Banco Local é a ÚNICA fonte de verdade para leitura.
-        // Toda a alimentação do banco agora é feita pelo Scheduler/Console Command no background.
-        return $this->repository->getByFilters($dto);
+        return $this->repository->list($dto);
+    }
+
+    /**
+     * Busca contratações relevantes por palavras-chave.
+     */
+    public function getRelevantByKeywords(array $keywords, ListRelevantContratationsDTO $dto): PaginatedResultDTO
+    {
+        if (empty($keywords)) {
+            return new PaginatedResultDTO(
+                data:        collect([]),
+                page:        1,
+                count_page:  0,
+                count:       0,
+                next_cursor: null,
+                has_more:    false,
+            );
+        }
+        return $this->repository->getRelevantByKeywords($keywords, $dto);
     }
 }
+

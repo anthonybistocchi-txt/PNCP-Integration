@@ -3,7 +3,7 @@
 namespace App\Jobs\PublicContratations;
 
 use App\Actions\PublicContratations\SyncPublicContratationAction;
-use App\DTOs\PublicContratations\GetPublicContratationsDTO;
+use App\DTOs\PublicContratations\ListPublicContratationsDTO;
 use App\Integrations\PNCP\PncpClient;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -11,6 +11,8 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Http\Client\RequestException;
 
 class ProcessPncpPageJob implements ShouldQueue
 {
@@ -30,7 +32,7 @@ class ProcessPncpPageJob implements ShouldQueue
      * Create a new job instance.
      */
     public function __construct(
-        protected GetPublicContratationsDTO $dto,
+        protected ListPublicContratationsDTO $dto,
         protected int $pagina,
         protected int $tamanhoPagina
     ) {}
@@ -40,6 +42,20 @@ class ProcessPncpPageJob implements ShouldQueue
      */
     public function handle(PncpClient $client, SyncPublicContratationAction $syncAction): void
     {
+        // 1. Verificação global do Circuit Breaker antes de qualquer requisição
+        if (Cache::has('pncp_circuit_breaker_until')) 
+        {
+            $pauseUntil = Cache::get('pncp_circuit_breaker_until');
+            $remainingSeconds = $pauseUntil - now()->timestamp;
+            
+            if ($remainingSeconds > 0) 
+            {
+                Log::info("Circuit Breaker ativo. Devolvendo Job da página {$this->pagina} para a fila com atraso de {$remainingSeconds}s.");
+                $this->release($remainingSeconds);
+                return;
+            }
+        }
+
         Log::info("ProcessPncpPageJob started for page {$this->pagina}.");
 
         $queryParams = array_filter([
@@ -52,33 +68,78 @@ class ProcessPncpPageJob implements ShouldQueue
             'tamanhoPagina'               => $this->tamanhoPagina,
         ]);
 
-        $response = $client->getContratacoes($queryParams);
+        try 
+        {
+            $response = $client->getContratacoes($queryParams);
 
-        if (!$response || empty($response->data)) {
-            Log::info("ProcessPncpPageJob finished. No data on page {$this->pagina}.");
-            return;
-        }
-
-        // Para cada item da página, vamos buscar os documentos (editais, anexos) associados
-        foreach ($response->data as $item) {
-            $cnpj = $item->orgaoEntidade->cnpj ?? null;
-            $ano = $item->anoCompra ?? null;
-            $sequencial = $item->sequencialCompra ?? null;
-
-            if ($cnpj && $ano && $sequencial) {
-                // Adiciona o array de arquivos/documentos ao payload do item
-                $item->documentos = $client->getArquivos($cnpj, $ano, $sequencial);
-
-                // Dorme 0.2 segundos (200.000 microssegundos) para evitar DDoS e 429 Too Many Requests
-                usleep(200000);
-            } else {
-                $item->documentos = [];
+            if (!$response || empty($response->data)) 
+            {
+                Log::info("ProcessPncpPageJob finished. No data on page {$this->pagina}.");
+                return;
             }
+
+            // Para cada item da página, vamos buscar os documentos (editais, anexos) associados
+            foreach ($response->data as $item) 
+            {
+                $cnpj       = $item->orgaoEntidade->cnpj ?? null;
+                $ano        = $item->anoCompra ?? null;
+                $sequencial = $item->sequencialCompra ?? null;
+
+                if ($cnpj && $ano && $sequencial) 
+                {
+                    // Adiciona o array de arquivos/documentos ao payload do item
+                    $item->documentos = $client->getArquivos($cnpj, $ano, $sequencial);
+
+                    // Dorme 0.2 segundos (200.000 microssegundos) para evitar DDoS e 429 Too Many Requests
+                    usleep(200000);
+                } 
+                else 
+                {
+                    $item->documentos = [];
+                }
+            }
+
+            // Passa o array completo para a Action fazer o Bulk Upsert
+            $syncAction->handle($response->data);
+
+            Log::info("ProcessPncpPageJob finished. Processed " . count($response->data) . " items on page {$this->pagina}.");
+            
+        } 
+        catch (RequestException $error) 
+        {
+            if ($error->response->status() === 429) 
+            {
+                $pauseMinutes = 5; // 5 minutos de pausa
+                $pauseUntil   = now()->addMinutes($pauseMinutes)->timestamp;
+                
+                Cache::put('pncp_circuit_breaker_until', $pauseUntil, now()->addMinutes($pauseMinutes));
+                
+                Log::warning("Erro 429 (Too Many Requests) no PNCP! Ativando Circuit Breaker por {$pauseMinutes} minutos. Job da página {$this->pagina} adiado.");
+                $this->release($pauseMinutes * 60);
+                return;
+            }
+            
+            // Outros erros HTTP continuam seguindo o fluxo normal de falha (usando o $backoff configurado)
+            throw $error;
         }
+        catch (\Throwable $error)
+        {
+            // Captura qualquer outro erro inesperado (DB, cast inválido, null pointer, etc)
+            // e o reloga com CONTEXTO COMPLETO antes de repassar ao framework.
+            Log::error(json_encode([
+                'error_type'  => 'PNCP_UNEXPECTED_JOB_ERROR',
+                'reason'      => 'Erro inesperado no ProcessPncpPageJob. Ver campo "message" para detalhes.',
+                'message'     => $error->getMessage(),
+                'job_context' => [
+                    'page'       => $this->pagina,
+                    'page_size'  => $this->tamanhoPagina,
+                    'attempt'    => $this->attempts(),
+                    'dto'        => (array) $this->dto,
+                ],
+            ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
 
-        // Passa o array completo para a Action fazer o Bulk Upsert
-        $syncAction->handle($response->data);
-
-        Log::info("ProcessPncpPageJob finished. Processed " . count($response->data) . " items on page {$this->pagina}.");
+            throw $error;
+        }
     }
 }
+

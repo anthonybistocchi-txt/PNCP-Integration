@@ -1,8 +1,8 @@
 <?php
 
-namespace App\DTOs;
+namespace App\DTOs\Auth;
 
-use App\Http\Requests\AuthRequest;
+use App\Http\Requests\Auth\AuthRequest;
 
 final class AuthDTO
 {

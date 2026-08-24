@@ -2,7 +2,7 @@
 
 namespace App\Console\Commands;
 
-use App\DTOs\PublicContratations\GetPublicContratationsDTO;
+use App\DTOs\PublicContratations\ListPublicContratationsDTO;
 use App\Jobs\PublicContratations\SyncPncpDataJob;
 use Illuminate\Console\Command;
 
@@ -22,6 +22,10 @@ class SyncPncpCommand extends Command
      */
     protected $description = 'Dispara o Job de sincronização com o PNCP para alimentar o banco de dados local.';
 
+    // private $modalidadeId = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]; // Leilão, Diálogo Competitivo, Concurso, Concorrência, Concurso / Chamamento Público, Pregão, Dispensa de Licitação, Inexigibilidade, Credenciamento, Pré-qualificação
+
+    private $modalidadeId = [6]; // Pregão
+
     /**
      * Execute the console command.
      */
@@ -29,24 +33,25 @@ class SyncPncpCommand extends Command
     {
         $this->info('Iniciando disparo do Job de Sincronização do PNCP...');
 
-        // Em um sistema real, você buscaria do banco de dados quais cidades/UFs seus clientes assinam
-        // e faria um foreach disparando um Job para cada combinação.
-        // Como MVP, vamos simular a busca para Ribeirão Preto nos últimos 30 dias.
-        $dataInicial = now()->subDays(17)->format('Ymd');
-        $dataFinal   = now()->format('Ymd');
+        $dataInicial = now()->yesterday()->format('Ymd');
+        $dataFinal   = now()->yesterday()->format('Ymd');
 
-        $dto = new GetPublicContratationsDTO(
-            dataInicial: $dataInicial,
-            dataFinal: $dataFinal,
-            codigoModalidadeContratacao: 6, // Pregão
-            uf: 'SP',
-            codigoMunicipioIbge: 3543402, // Ribeirão Preto
-            pagina: 1,
-            tamanhoPagina: 500
-        );
+        foreach ($this->modalidadeId as $modalidade) 
+        {
+            $dto = new ListPublicContratationsDTO(
+                dataInicial: $dataInicial,
+                dataFinal: $dataFinal,
+                codigoModalidadeContratacao: $modalidade,
+                uf: null,
+                codigoMunicipioIbge: null,
+                cursor: null,
+                limit: 50,
+            );
 
-        SyncPncpDataJob::dispatch($dto);
+            SyncPncpDataJob::dispatch($dto);
 
-        $this->info("Job enviado para a fila: Sincronizando licitações de SP (IBGE 3543402) de {$dataInicial} até {$dataFinal}.");
+            $this->info("Job enviado para a fila: Sincronizando licitações do PNCP de {$dataInicial} até {$dataFinal}.");
+        }
     }
 }
+

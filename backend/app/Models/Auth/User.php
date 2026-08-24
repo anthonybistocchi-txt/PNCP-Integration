@@ -1,7 +1,8 @@
 <?php
 
-namespace App\Models;
+namespace App\Models\Auth;
 
+use App\Models\UserKeywords\UserKeyword;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -24,6 +25,7 @@ class User extends Authenticatable
         'cnpj',
         'password',
         'api_key',
+        'is_active',
     ];
     /**
      * Get the attributes that should be cast.
@@ -36,5 +38,15 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
         ];
+    }
+
+    public function keywords()
+    {
+        return $this->hasMany(UserKeyword::class);
+    }
+
+    public function isActive(): bool
+    {
+        return $this->is_active;
     }
 }
