@@ -42,6 +42,15 @@ class AuthMiddleware
             ], 401);
         }
 
+        if (!$user->isActive()) 
+        {
+            $this->logAuthFailure($request, 'API_KEY inativa');
+
+            return response()->json([
+                'error' => 'API KEY inativa',
+            ], 401);
+        }
+
         // Injeta o usuário autenticado no container do Laravel.
         // Permite usar auth()->user() em qualquer ponto downstream (Controller, Service, logs).
         Auth::setUser($user);
