@@ -36,10 +36,27 @@ return Application::configure(basePath: dirname(__DIR__))
         // Em desenvolvimento, a mensagem real do erro é exibida para facilitar debug.
         $exceptions->render(function (\Throwable $e, Request $request) {
             if ($request->is('api/*')) {
+                // Deixa o Laravel tratar exceções HTTP (como 404, 403) e Validação (422) naturalmente
+                if ($e instanceof \Illuminate\Validation\ValidationException ||
+                    $e instanceof \Symfony\Component\HttpKernel\Exception\HttpExceptionInterface ||
+                    $e instanceof \Illuminate\Auth\AuthenticationException) {
+                    return null;
+                }
+
+                $statusCode = $e->getCode();
+                if (!is_numeric($statusCode) || $statusCode < 400 || $statusCode > 599) {
+                    $statusCode = 500;
+                }
+
+                $errorTitle = $statusCode >= 500 ? 'Erro interno do servidor.' : 'Erro na requisição.';
+                $message = $statusCode >= 500 && app()->environment('production') 
+                    ? 'Internal Server Error' 
+                    : $e->getMessage();
+
                 return response()->json([
-                    'error'   => 'Erro interno do servidor.',
-                    'message' => app()->environment('production') ? 'Internal Server Error' : $e->getMessage(),
-                ], 500);
+                    'error'   => $errorTitle,
+                    'message' => $message,
+                ], $statusCode);
             }
         });
 
