@@ -33,7 +33,8 @@ class AuthMiddleware
 
         $user = User::where('api_key', $token)->first();
 
-        if (!$user) {
+        if (!$user) 
+        {
             $this->logAuthFailure($request, 'API_KEY inválida');
 
             return response()->json([
