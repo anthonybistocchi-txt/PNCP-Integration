@@ -12,9 +12,11 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Http\Client\RequestException;
 use App\Jobs\PublicContratations\ProcessPncpPageJob;
+use App\Integrations\PNCP\PncpCircuitBreaker;
+use App\Support\ErrorHandling\JobExceptionPolicy;
+use Illuminate\Support\Str;
 
 class SyncPncpDataJob implements ShouldQueue, ShouldBeUnique
 {
@@ -41,22 +43,21 @@ class SyncPncpDataJob implements ShouldQueue, ShouldBeUnique
     /**
      * Execute the job.
      */
-    public function handle(PncpClient $client): void
+    public function handle(PncpClient $client, PncpCircuitBreaker $circuitBreaker, JobExceptionPolicy $jobExceptionPolicy): void
     {
+        Log::withContext([
+            'job_id' => $this->job ? $this->job->getJobId() : 'master',
+        ]);
+        
         $startedAt = now();
 
         // 1. Verificação global do Circuit Breaker antes de qualquer requisição
-        if (Cache::has('pncp_circuit_breaker_until')) 
+        if ($circuitBreaker->isOpen()) 
         {
-            $pauseUntil       = Cache::get('pncp_circuit_breaker_until');
-            $remainingSeconds = $pauseUntil - now()->timestamp;
-            
-            if ($remainingSeconds > 0) 
-            {
-                Log::info("Circuit Breaker ativo. Devolvendo Job Mestre para a fila com atraso de {$remainingSeconds}s.");
-                $this->release($remainingSeconds);
-                return;
-            }
+            $remainingSeconds = $circuitBreaker->remainingSeconds();
+            Log::info("Circuit Breaker ativo. Devolvendo Job Mestre para a fila com atraso de {$remainingSeconds}s.");
+            $this->release($remainingSeconds);
+            return;
         }
 
         Log::info('SyncPncpDataJob (MASTER) started for parameters', (array) $this->dto);
@@ -86,18 +87,19 @@ class SyncPncpDataJob implements ShouldQueue, ShouldBeUnique
             $totalPaginas = $response->totalPaginas ?? 1;
             Log::info("PNCP API reports {$response->totalRegistros} total records across {$totalPaginas} pages.");
 
+            $syncId = (string) Str::uuid();
+
             // Cria os N Jobs Filhos (Operários) e joga na fila, escalonando no tempo (ex: a cada 20 segundos)
             for ($pagina = 1; $pagina <= $totalPaginas; $pagina++) 
             {
                 $delayInSeconds = ($pagina - 1) * 20;
-                ProcessPncpPageJob::dispatch($this->dto, $pagina, $tamanhoPagina)
+                ProcessPncpPageJob::dispatch($this->dto, $pagina, $tamanhoPagina, $syncId)
                     ->delay(now()->addSeconds($delayInSeconds));
             }
 
             $finishedAt = now();
 
-            Log::info(json_encode([
-                'event'                   => 'SYNC_CYCLE_COMPLETED',
+            Log::info('SYNC_CYCLE_COMPLETED', [
                 'modalidade'              => $this->dto->codigoModalidadeContratacao,
                 'total_pages_dispatched'  => $totalPaginas,
                 'total_records_processed' => $response->totalRegistros,
@@ -105,39 +107,26 @@ class SyncPncpDataJob implements ShouldQueue, ShouldBeUnique
                 'started_at'              => $startedAt->toIso8601String(),
                 'finished_at'             => $finishedAt->toIso8601String(),
                 'dto'                     => (array) $this->dto,
-            ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+            ]);
             
         } 
-        catch (RequestException $error) 
+        catch (\Throwable $error)
         {
-            if ($error->response->status() === 429) 
+            if ($error instanceof RequestException && $error->response->status() === 429) 
             {
                 $pauseMinutes = 5; // 5 minutos de pausa
-                $pauseUntil   = now()->addMinutes($pauseMinutes)->timestamp;
-                
-                Cache::put('pncp_circuit_breaker_until', $pauseUntil, now()->addMinutes($pauseMinutes));
+                $circuitBreaker->trip($pauseMinutes);
                 
                 Log::warning("Erro 429 (Too Many Requests) no PNCP! Ativando Circuit Breaker por {$pauseMinutes} minutos. Job Mestre adiado.");
                 $this->release($pauseMinutes * 60);
                 return;
             }
             
-            throw $error;
-        }
-        catch (\Throwable $error)
-        {
-            // Captura qualquer erro inesperado no Job Mestre com contexto completo
-            Log::error(json_encode([
-                'error_type'  => 'PNCP_UNEXPECTED_MASTER_JOB_ERROR',
-                'reason'      => 'Erro inesperado no SyncPncpDataJob (MASTER). Ver campo "message" para detalhes.',
-                'message'     => $error->getMessage(),
-                'job_context' => [
-                    'attempt' => $this->attempts(),
-                    'dto'     => (array) $this->dto,
-                ],
-            ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
-
-            throw $error;
+            $jobExceptionPolicy->handle($error, $this, [
+                'action'  => 'SyncPncpDataJob',
+                'attempt' => $this->attempts(),
+                'dto'     => (array) $this->dto,
+            ]);
         }
     }
 }

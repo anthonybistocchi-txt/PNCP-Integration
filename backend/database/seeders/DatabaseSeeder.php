@@ -18,7 +18,7 @@ class DatabaseSeeder extends Seeder
         // Chama a seeder que acabamos de criar
         $this->call([
             AdminUserSeeder::class,
-            PublicContratationSeeder::class,
+            // PublicContratationSeeder::class,
         ]);
         
         // Mantém a criação do usuário de teste original se desejar

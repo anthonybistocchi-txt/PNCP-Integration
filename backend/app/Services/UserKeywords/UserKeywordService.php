@@ -5,7 +5,8 @@ namespace App\Services\UserKeywords;
 use App\DTOs\UserKeywords\SaveUserKeywordDTO;
 use App\Models\UserKeywords\UserKeyword;
 use App\Repositories\UserKeywords\UserKeywordRepository;
-use Exception;
+use App\Exceptions\Domain\ResourceConflictException;
+use App\Exceptions\Domain\ResourceNotFoundException;
 use Illuminate\Database\Eloquent\Collection;
 
 class UserKeywordService
@@ -16,13 +17,7 @@ class UserKeywordService
 
     public function listByUserId(int $userId): Collection
     {
-        $keywords = $this->repository->listByUserId($userId);
-
-        if ($keywords->isEmpty()) {
-            throw new Exception("Nenhuma palavra-chave encontrada para o usuário.", 404);
-        }
-
-        return $keywords;
+        return $this->repository->listByUserId($userId);
     }
 
     public function saveOrUpdate(SaveUserKeywordDTO $dto): UserKeyword
@@ -33,7 +28,7 @@ class UserKeywordService
 
             if ($keyword && $keyword->id !== $dto->id)
             {
-                throw new Exception("Esta palavra-chave já está cadastrada para o usuário.", 409);
+                throw new ResourceConflictException("Esta palavra-chave já está cadastrada para o usuário.");
             }
         }
 
@@ -46,7 +41,7 @@ class UserKeywordService
 
         if (!$deleted)
         {
-            throw new Exception("Palavra-chave não encontrada ou não pertence ao usuário.", 404);
+            throw new ResourceNotFoundException("Palavra-chave não encontrada ou não pertence ao usuário.");
         }
     }
 }

@@ -18,12 +18,11 @@ class IntegrationExceptionHandler
     {
         // 1. Timeout de conexão (cURL error 28)
         if ($e instanceof ConnectionException) {
-            Log::error(json_encode([
-                'error_type'  => 'PNCP_TIMEOUT',
+            Log::error('PNCP_TIMEOUT', [
                 'status_code' => 408,
                 'reason'      => 'A API demorou muito para responder ou a conexão falhou (Timeout).',
                 'message'     => $e->getMessage(),
-            ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+            ]);
 
             return false;
         }
@@ -44,26 +43,24 @@ class IntegrationExceptionHandler
                 $reason  = $decoded ?? $body;
             }
 
-            Log::error(json_encode([
-                'error_type'  => 'PNCP_HTTP_ERROR',
+            Log::error('PNCP_HTTP_ERROR', [
                 'status_code' => $status,
                 'url'         => $url,
                 'reason'      => $reason,
                 'response'    => [
                     'headers' => $response->headers(),
                 ],
-            ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+            ]);
 
             return false;
         }
 
         // 3. Job esgotou todas as tentativas e foi descartado da fila
         if ($e instanceof MaxAttemptsExceededException) {
-            Log::error(json_encode([
-                'error_type' => 'JOB_MAX_ATTEMPTS_EXCEEDED',
+            Log::error('JOB_MAX_ATTEMPTS_EXCEEDED', [
                 'reason'     => 'O Job foi descartado permanentemente após esgotar todas as tentativas configuradas.',
                 'job'        => $e->getMessage(),
-            ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+            ]);
 
             return false;
         }

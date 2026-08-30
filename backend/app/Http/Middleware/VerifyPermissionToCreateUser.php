@@ -27,8 +27,11 @@ class VerifyPermissionToCreateUser
             $token !== $user->api_key
         ) {
             return response()->json([
-                'error' => 'Você não tem permissão para criar usuários',
-            ], 401);
+                'error'      => 'forbidden',
+                'message'    => 'Você não tem permissão para criar usuários',
+                'details'    => (object) [],
+                'request_id' => $request->header('X-Request-ID', 'unknown'),
+            ], 403);
         }
 
 

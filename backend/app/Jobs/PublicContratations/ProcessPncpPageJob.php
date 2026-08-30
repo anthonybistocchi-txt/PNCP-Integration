@@ -11,8 +11,9 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Http\Client\RequestException;
+use App\Integrations\PNCP\PncpCircuitBreaker;
+use App\Support\ErrorHandling\JobExceptionPolicy;
 
 class ProcessPncpPageJob implements ShouldQueue
 {
@@ -34,26 +35,33 @@ class ProcessPncpPageJob implements ShouldQueue
     public function __construct(
         protected ListPublicContratationsDTO $dto,
         protected int $pagina,
-        protected int $tamanhoPagina
+        protected int $tamanhoPagina,
+        protected string $syncId = ''
     ) {}
 
     /**
      * Execute the job.
      */
-    public function handle(PncpClient $client, SyncPublicContratationAction $syncAction): void
+    public function handle(
+        PncpClient $client,
+        SyncPublicContratationAction $syncAction,
+        PncpCircuitBreaker $circuitBreaker,
+        JobExceptionPolicy $jobExceptionPolicy
+    ): void
     {
+        Log::withContext([
+            'sync_id' => $this->syncId,
+            'job_id'  => $this->job ? $this->job->getJobId() : 'sync',
+            'page'    => $this->pagina
+        ]);
+
         // 1. Verificação global do Circuit Breaker antes de qualquer requisição
-        if (Cache::has('pncp_circuit_breaker_until')) 
+        if ($circuitBreaker->isOpen())
         {
-            $pauseUntil = Cache::get('pncp_circuit_breaker_until');
-            $remainingSeconds = $pauseUntil - now()->timestamp;
-            
-            if ($remainingSeconds > 0) 
-            {
-                Log::info("Circuit Breaker ativo. Devolvendo Job da página {$this->pagina} para a fila com atraso de {$remainingSeconds}s.");
-                $this->release($remainingSeconds);
-                return;
-            }
+            $remainingSeconds = $circuitBreaker->remainingSeconds();
+            Log::info("Circuit Breaker ativo. Devolvendo Job da página {$this->pagina} para a fila com atraso de {$remainingSeconds}s.");
+            $this->release($remainingSeconds);
+            return;
         }
 
         Log::info("ProcessPncpPageJob started for page {$this->pagina}.");
@@ -105,40 +113,25 @@ class ProcessPncpPageJob implements ShouldQueue
             Log::info("ProcessPncpPageJob finished. Processed " . count($response->data) . " items on page {$this->pagina}.");
             
         } 
-        catch (RequestException $error) 
+        catch (\Throwable $error)
         {
-            if ($error->response->status() === 429) 
+            if ($error instanceof RequestException && $error->response->status() === 429) 
             {
                 $pauseMinutes = 5; // 5 minutos de pausa
-                $pauseUntil   = now()->addMinutes($pauseMinutes)->timestamp;
-                
-                Cache::put('pncp_circuit_breaker_until', $pauseUntil, now()->addMinutes($pauseMinutes));
+                $circuitBreaker->trip($pauseMinutes);
                 
                 Log::warning("Erro 429 (Too Many Requests) no PNCP! Ativando Circuit Breaker por {$pauseMinutes} minutos. Job da página {$this->pagina} adiado.");
                 $this->release($pauseMinutes * 60);
                 return;
             }
             
-            // Outros erros HTTP continuam seguindo o fluxo normal de falha (usando o $backoff configurado)
-            throw $error;
-        }
-        catch (\Throwable $error)
-        {
-            // Captura qualquer outro erro inesperado (DB, cast inválido, null pointer, etc)
-            // e o reloga com CONTEXTO COMPLETO antes de repassar ao framework.
-            Log::error(json_encode([
-                'error_type'  => 'PNCP_UNEXPECTED_JOB_ERROR',
-                'reason'      => 'Erro inesperado no ProcessPncpPageJob. Ver campo "message" para detalhes.',
-                'message'     => $error->getMessage(),
-                'job_context' => [
-                    'page'       => $this->pagina,
-                    'page_size'  => $this->tamanhoPagina,
-                    'attempt'    => $this->attempts(),
-                    'dto'        => (array) $this->dto,
-                ],
-            ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
-
-            throw $error;
+            $jobExceptionPolicy->handle($error, $this, [
+                'action'     => 'ProcessPncpPageJob',
+                'page'       => $this->pagina,
+                'page_size'  => $this->tamanhoPagina,
+                'attempt'    => $this->attempts(),
+                'dto'        => (array) $this->dto,
+            ]);
         }
     }
 }
