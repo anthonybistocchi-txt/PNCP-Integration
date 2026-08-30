@@ -45,7 +45,9 @@ return new class extends Migration
         });
 
         // Adiciona o index de Full Text Search para o objeto_compra (em Português)
-        DB::statement("CREATE INDEX public_contratations_objeto_compra_fts ON public_contratations USING gin(to_tsvector('portuguese', objeto_compra))");
+        if (DB::connection()->getDriverName() === 'pgsql') {
+            DB::statement("CREATE INDEX public_contratations_objeto_compra_fts ON public_contratations USING gin(to_tsvector('portuguese', objeto_compra))");
+        }
     }
 
     /**
