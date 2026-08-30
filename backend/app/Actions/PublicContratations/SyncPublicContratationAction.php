@@ -64,13 +64,12 @@ class SyncPublicContratationAction
         }
         catch (\Throwable $error)
         {
-            Log::error(json_encode([
-                'error_type'   => 'PNCP_UPSERT_DB_ERROR',
+            Log::error('PNCP_UPSERT_DB_ERROR', [
                 'reason'       => 'Falha ao executar o Bulk Upsert no banco de dados.',
                 'message'      => $error->getMessage(),
                 'batch_size'   => count($upsertData),
                 'sample_key'   => $upsertData[0]['numero_controle_pncp'] ?? 'N/A',
-            ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+            ]);
 
             throw $error;
         }
