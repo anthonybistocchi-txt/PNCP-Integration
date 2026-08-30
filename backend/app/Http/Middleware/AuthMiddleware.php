@@ -20,11 +20,15 @@ class AuthMiddleware
     {
         $token = $request->bearerToken() ?? $request->header('API_KEY') ?? $request->header('Authorization');
 
-        if (!$token) {
+        if (!$token) 
+        {
             $this->logAuthFailure($request, 'API_KEY ausente');
 
             return response()->json([
-                'error' => 'API KEY não fornecida',
+                'error'      => 'authentication_required',
+                'message'    => 'API KEY não fornecida',
+                'details'    => (object) [],
+                'request_id' => $request->header('X-Request-ID', 'unknown'),
             ], 401);
         }
 
@@ -38,7 +42,10 @@ class AuthMiddleware
             $this->logAuthFailure($request, 'API_KEY inválida');
 
             return response()->json([
-                'error' => 'API KEY inválida',
+                'error'      => 'invalid_api_key',
+                'message'    => 'API KEY inválida ou inativa.',
+                'details'    => (object) [],
+                'request_id' => $request->header('X-Request-ID', 'unknown'),
             ], 401);
         }
 
@@ -47,7 +54,10 @@ class AuthMiddleware
             $this->logAuthFailure($request, 'API_KEY inativa');
 
             return response()->json([
-                'error' => 'API KEY inativa',
+                'error'      => 'invalid_api_key',
+                'message'    => 'API KEY inválida ou inativa.', // Same external message
+                'details'    => (object) [],
+                'request_id' => $request->header('X-Request-ID', 'unknown'),
             ], 401);
         }
 

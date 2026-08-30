@@ -1,5 +1,7 @@
 <?php
 
+use App\Exceptions\IntegrationExceptionHandler;
+use App\Exceptions\Renderer\ApiExceptionRenderer;
 use App\Http\Middleware\AddRequestIdMiddleware;
 use App\Http\Middleware\AuthMiddleware;
 use App\Http\Middleware\VerifyPermissionToCreateUser;
@@ -32,33 +34,11 @@ return Application::configure(basePath: dirname(__DIR__))
             fn(Request $request) => $request->is('api/*') || $request->expectsJson(),
         );
 
-        // Retorna uma mensagem genérica em produção para não vazar detalhes internos.
-        // Em desenvolvimento, a mensagem real do erro é exibida para facilitar debug.
-        $exceptions->render(function (\Throwable $e, Request $request) {
-            if ($request->is('api/*')) {
-                // Deixa o Laravel tratar exceções HTTP (como 404, 403) e Validação (422) naturalmente
-                if ($e instanceof \Illuminate\Validation\ValidationException ||
-                    $e instanceof \Symfony\Component\HttpKernel\Exception\HttpExceptionInterface ||
-                    $e instanceof \Illuminate\Auth\AuthenticationException) {
-                    return null;
-                }
+        // Delega todo o rendering HTTP para o renderer dedicado
+        $exceptions->render(
+            fn(\Throwable $e, Request $request) =>
+                app(ApiExceptionRenderer::class)->render($e, $request)
+        );
 
-                $statusCode = $e->getCode();
-                if (!is_numeric($statusCode) || $statusCode < 400 || $statusCode > 599) {
-                    $statusCode = 500;
-                }
-
-                $errorTitle = $statusCode >= 500 ? 'Erro interno do servidor.' : 'Erro na requisição.';
-                $message = $statusCode >= 500 && app()->environment('production') 
-                    ? 'Internal Server Error' 
-                    : $e->getMessage();
-
-                return response()->json([
-                    'error'   => $errorTitle,
-                    'message' => $message,
-                ], $statusCode);
-            }
-        });
-
-        $exceptions->reportable(new \App\Exceptions\IntegrationExceptionHandler());
+        $exceptions->reportable(new IntegrationExceptionHandler());
     })->create();
