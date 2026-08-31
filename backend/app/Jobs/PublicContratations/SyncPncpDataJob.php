@@ -15,6 +15,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Http\Client\RequestException;
 use App\Jobs\PublicContratations\ProcessPncpPageJob;
 use App\Integrations\PNCP\PncpCircuitBreaker;
+use App\Integrations\PNCP\PncpSyncCycleTracker;
 use App\Support\ErrorHandling\JobExceptionPolicy;
 use Illuminate\Support\Str;
 
@@ -41,9 +42,22 @@ class SyncPncpDataJob implements ShouldQueue, ShouldBeUnique
     ) {}
 
     /**
+     * Unique por modalidade + intervalo. Sem isso, 10 modalidades no mesmo
+     * comando colapsam num único job (lock padrão é o nome da classe).
+     */
+    public function uniqueId(): string
+    {
+        return implode(':', [
+            $this->dto->codigoModalidadeContratacao,
+            $this->dto->dataInicial,
+            $this->dto->dataFinal,
+        ]);
+    }
+
+    /**
      * Execute the job.
      */
-    public function handle(PncpClient $client, PncpCircuitBreaker $circuitBreaker, JobExceptionPolicy $jobExceptionPolicy): void
+    public function handle(PncpClient $client, PncpCircuitBreaker $circuitBreaker, JobExceptionPolicy $jobExceptionPolicy, PncpSyncCycleTracker $cycleTracker): void
     {
         Log::withContext([
             'job_id' => $this->job ? $this->job->getJobId() : 'master',
@@ -89,24 +103,23 @@ class SyncPncpDataJob implements ShouldQueue, ShouldBeUnique
 
             $syncId = (string) Str::uuid();
 
+            $cycleTracker->start($syncId, $totalPaginas);
+
             // Cria os N Jobs Filhos (Operários) e joga na fila, escalonando no tempo (ex: a cada 20 segundos)
             for ($pagina = 1; $pagina <= $totalPaginas; $pagina++) 
             {
                 $delayInSeconds = ($pagina - 1) * 20;
-                ProcessPncpPageJob::dispatch($this->dto, $pagina, $tamanhoPagina, $syncId)
+                ProcessPncpPageJob::dispatch($this->dto, $pagina, $tamanhoPagina, $syncId, $startedAt->toIso8601String())
                     ->delay(now()->addSeconds($delayInSeconds));
             }
 
-            $finishedAt = now();
-
-            Log::info('SYNC_CYCLE_COMPLETED', [
-                'modalidade'              => $this->dto->codigoModalidadeContratacao,
-                'total_pages_dispatched'  => $totalPaginas,
-                'total_records_processed' => $response->totalRegistros,
-                'duration_minutes'        => $startedAt->diffInMinutes($finishedAt),
-                'started_at'              => $startedAt->toIso8601String(),
-                'finished_at'             => $finishedAt->toIso8601String(),
-                'dto'                     => (array) $this->dto,
+            Log::info('SYNC_PAGES_DISPATCHED', [
+                'sync_id'                => $syncId,
+                'modalidade'             => $this->dto->codigoModalidadeContratacao,
+                'total_pages_dispatched' => $totalPaginas,
+                'total_records_reported' => $response->totalRegistros,
+                'started_at'             => $startedAt->toIso8601String(),
+                'dto'                    => (array) $this->dto,
             ]);
             
         } 
