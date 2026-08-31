@@ -14,7 +14,7 @@ RUN apt-get update && apt-get install -y \
     libpq-dev
 
 # Install extensions
-RUN docker-php-ext-install pdo_mysql pdo_pgsql mbstring exif pcntl bcmath gd
+RUN docker-php-ext-install pdo_mysql pdo_pgsql mbstring exif pcntl bcmath gd opcache
 # Corrigido:
 RUN pecl channel-update pecl.php.net \
     && pecl install redis \

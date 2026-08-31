@@ -1,0 +1,81 @@
+# Servidor: 4 vCPU / 24 GB RAM
+# Uso: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --scale worker=2
+#
+# Orçamento aproximado (limites):
+#   OS/headroom ~6 GB | postgres 10 GB | redis 2 GB | php 2 GB | workers 2×2 GB | nginx/scheduler ~0.5 GB
+# CPU: postgres 2 | php 1 | worker 1.5 (×2 no scale) | redis/nginx 0.5 cada
+
+services:
+  nginx:
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 256M
+        reservations:
+          memory: 64M
+
+  php:
+    deploy:
+      resources:
+        limits:
+          cpus: "1.00"
+          memory: 2G
+        reservations:
+          memory: 512M
+
+  worker:
+    deploy:
+      resources:
+        limits:
+          cpus: "1.50"
+          memory: 2G
+        reservations:
+          memory: 256M
+
+  scheduler:
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 256M
+        reservations:
+          memory: 64M
+
+  postgres:
+    shm_size: "1g"
+    command: >
+      postgres
+      -c max_connections=80
+      -c shared_buffers=2GB
+      -c effective_cache_size=8GB
+      -c maintenance_work_mem=512MB
+      -c work_mem=16MB
+      -c wal_buffers=16MB
+      -c min_wal_size=1GB
+      -c max_wal_size=4GB
+      -c checkpoint_completion_target=0.9
+      -c random_page_cost=1.1
+      -c effective_io_concurrency=200
+      -c max_worker_processes=4
+      -c max_parallel_workers_per_gather=2
+      -c max_parallel_workers=4
+      -c huge_pages=off
+      -c default_statistics_target=100
+    deploy:
+      resources:
+        limits:
+          cpus: "2.00"
+          memory: 10G
+        reservations:
+          memory: 4G
+
+  redis:
+    command: redis-server --appendonly yes --maxmemory 1536mb --maxmemory-policy noeviction
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 2G
+        reservations:
+          memory: 256M
