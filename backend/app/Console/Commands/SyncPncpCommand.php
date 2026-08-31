@@ -9,35 +9,34 @@ use Illuminate\Console\Command;
 class SyncPncpCommand extends Command
 {
     /**
-     * The name and signature of the console command.
-     *
-     * @var string
+     * --days=1 (padrão): ontem até hoje, para o cron diário.
+     * --days=30: carga inicial / backfill.
+     * --modalidades=1,2,7: restringe o disparo. Sem a flag, usa todas (1–10).
      */
-    protected $signature = 'pncp:sync';
+    protected $signature = 'pncp:sync
+        {--days=1 : Quantidade de dias para trás (1 = ontem até hoje)}
+        {--modalidades= : Lista separada por vírgula. Vazio = todas}';
 
-    /**
-     * The console command description.
-     *
-     * @var string
-     */
     protected $description = 'Dispara o Job de sincronização com o PNCP para alimentar o banco de dados local.';
 
-    // private $modalidadeId = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]; // Leilão, Diálogo Competitivo, Concurso, Concorrência, Concurso / Chamamento Público, Pregão, Dispensa de Licitação, Inexigibilidade, Credenciamento, Pré-qualificação
+    private array $todasModalidades = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
-    private $modalidadeId = [6]; // Pregão
-
-    /**
-     * Execute the console command.
-     */
-    public function handle()
+    public function handle(): int
     {
-        $this->info('Iniciando disparo do Job de Sincronização do PNCP...');
+        $days        = max(1, (int) $this->option('days'));
+        $modalidades = $this->resolverModalidades();
 
-        $dataInicial = now()->yesterday()->format('Ymd');
-        $dataFinal   = now()->yesterday()->format('Ymd');
+        if ($modalidades === []) {
+            $this->error('Nenhuma modalidade válida. Use IDs de 1 a 10, separados por vírgula.');
+            return self::FAILURE;
+        }
 
-        foreach ($this->modalidadeId as $modalidade) 
-        {
+        $dataInicial = now()->subDays($days)->format('Ymd');
+        $dataFinal   = now()->format('Ymd');
+
+        $this->info("Sincronizando PNCP de {$dataInicial} até {$dataFinal} ({$days} dia(s)). Modalidades: " . implode(', ', $modalidades));
+
+        foreach ($modalidades as $modalidade) {
             $dto = new ListPublicContratationsDTO(
                 dataInicial: $dataInicial,
                 dataFinal: $dataFinal,
@@ -50,8 +49,31 @@ class SyncPncpCommand extends Command
 
             SyncPncpDataJob::dispatch($dto);
 
-            $this->info("Job enviado para a fila: Sincronizando licitações do PNCP de {$dataInicial} até {$dataFinal}.");
+            $this->info("Job enviado: modalidade {$modalidade}, {$dataInicial} até {$dataFinal}.");
         }
+
+        return self::SUCCESS;
+    }
+
+    /**
+     * @return list<int>
+     */
+    private function resolverModalidades(): array
+    {
+        $raw = trim((string) $this->option('modalidades'));
+
+        if ($raw === '') {
+            return $this->todasModalidades;
+        }
+
+        $ids = array_map('intval', explode(',', $raw));
+        $ids = array_values(array_unique(array_filter(
+            $ids,
+            fn (int $id) => in_array($id, $this->todasModalidades, true)
+        )));
+
+        sort($ids);
+
+        return $ids;
     }
 }
-

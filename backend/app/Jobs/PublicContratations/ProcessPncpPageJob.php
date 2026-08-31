@@ -13,7 +13,9 @@ use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Http\Client\RequestException;
 use App\Integrations\PNCP\PncpCircuitBreaker;
+use App\Integrations\PNCP\PncpSyncCycleTracker;
 use App\Support\ErrorHandling\JobExceptionPolicy;
+use Carbon\Carbon;
 
 class ProcessPncpPageJob implements ShouldQueue
 {
@@ -36,7 +38,8 @@ class ProcessPncpPageJob implements ShouldQueue
         protected ListPublicContratationsDTO $dto,
         protected int $pagina,
         protected int $tamanhoPagina,
-        protected string $syncId = ''
+        protected string $syncId = '',
+        protected string $cycleStartedAt = ''
     ) {}
 
     /**
@@ -46,7 +49,8 @@ class ProcessPncpPageJob implements ShouldQueue
         PncpClient $client,
         SyncPublicContratationAction $syncAction,
         PncpCircuitBreaker $circuitBreaker,
-        JobExceptionPolicy $jobExceptionPolicy
+        JobExceptionPolicy $jobExceptionPolicy,
+        PncpSyncCycleTracker $cycleTracker
     ): void
     {
         Log::withContext([
@@ -83,6 +87,7 @@ class ProcessPncpPageJob implements ShouldQueue
             if (!$response || empty($response->data)) 
             {
                 Log::info("ProcessPncpPageJob finished. No data on page {$this->pagina}.");
+                $this->markCyclePageDone($cycleTracker);
                 return;
             }
 
@@ -111,6 +116,7 @@ class ProcessPncpPageJob implements ShouldQueue
             $syncAction->handle($response->data);
 
             Log::info("ProcessPncpPageJob finished. Processed " . count($response->data) . " items on page {$this->pagina}.");
+            $this->markCyclePageDone($cycleTracker);
             
         } 
         catch (\Throwable $error)
@@ -132,7 +138,37 @@ class ProcessPncpPageJob implements ShouldQueue
                 'attempt'    => $this->attempts(),
                 'dto'        => (array) $this->dto,
             ]);
+
+            // handle() só retorna aqui quando a falha é permanente/crítica (não haverá retry).
+            $this->markCyclePageDone($cycleTracker);
         }
+    }
+
+    /**
+     * Incrementa o contador do ciclo. A última página emite SYNC_CYCLE_FINISHED.
+     * Release (circuit breaker) e retry transiente não devem chamar este método.
+     */
+    private function markCyclePageDone(PncpSyncCycleTracker $cycleTracker): void
+    {
+        $pagesCompleted = $cycleTracker->markPageDone($this->syncId);
+
+        if ($pagesCompleted === null) {
+            return;
+        }
+
+        $finishedAt = now();
+        $startedAt  = $this->cycleStartedAt !== '' ? Carbon::parse($this->cycleStartedAt) : null;
+
+        Log::info('SYNC_CYCLE_FINISHED', [
+            'sync_id'          => $this->syncId,
+            'modalidade'       => $this->dto->codigoModalidadeContratacao,
+            'pages_completed'  => $pagesCompleted,
+            'duration_minutes' => $startedAt ? $startedAt->diffInMinutes($finishedAt) : null,
+            'started_at'      => $this->cycleStartedAt ?: null,
+            'finished_at'     => $finishedAt->toIso8601String(),
+            'dto'             => (array) $this->dto,
+            'message'         => "Todos os {$pagesCompleted} jobs do ciclo foram finalizados.",
+        ]);
     }
 }
 
