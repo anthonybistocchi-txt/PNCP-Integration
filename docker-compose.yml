@@ -27,7 +27,7 @@ services:
       - ./.docker/nginx/default.conf:/etc/nginx/conf.d/default.conf
     depends_on:
       php:
-        condition: service_started
+        condition: service_healthy
     networks:
       - app-network
     restart: unless-stopped
@@ -35,6 +35,12 @@ services:
 
   php:
     <<: *php-app
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/9000'"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
     depends_on:
       postgres:
         condition: service_healthy
