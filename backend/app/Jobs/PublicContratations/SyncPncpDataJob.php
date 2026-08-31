@@ -105,12 +105,20 @@ class SyncPncpDataJob implements ShouldQueue, ShouldBeUnique
 
             $cycleTracker->start($syncId, $totalPaginas);
 
-            // Cria os N Jobs Filhos (Operários) e joga na fila, escalonando no tempo (ex: a cada 20 segundos)
-            for ($pagina = 1; $pagina <= $totalPaginas; $pagina++) 
-            {
-                $delayInSeconds = ($pagina - 1) * 20;
-                ProcessPncpPageJob::dispatch($this->dto, $pagina, $tamanhoPagina, $syncId, $startedAt->toIso8601String())
-                    ->delay(now()->addSeconds($delayInSeconds));
+            $staggerSeconds = max(0, (int) config('pncp.page_stagger_seconds', 0));
+
+            for ($pagina = 1; $pagina <= $totalPaginas; $pagina++) {
+                $job = ProcessPncpPageJob::dispatch(
+                    $this->dto,
+                    $pagina,
+                    $tamanhoPagina,
+                    $syncId,
+                    $startedAt->toIso8601String()
+                );
+
+                if ($staggerSeconds > 0) {
+                    $job->delay(now()->addSeconds(($pagina - 1) * $staggerSeconds));
+                }
             }
 
             Log::info('SYNC_PAGES_DISPATCHED', [
@@ -127,7 +135,7 @@ class SyncPncpDataJob implements ShouldQueue, ShouldBeUnique
         {
             if ($error instanceof RequestException && $error->response->status() === 429) 
             {
-                $pauseMinutes = 5; // 5 minutos de pausa
+                $pauseMinutes = max(1, (int) config('pncp.circuit_breaker_minutes', 2));
                 $circuitBreaker->trip($pauseMinutes);
                 
                 Log::warning("Erro 429 (Too Many Requests) no PNCP! Ativando Circuit Breaker por {$pauseMinutes} minutos. Job Mestre adiado.");

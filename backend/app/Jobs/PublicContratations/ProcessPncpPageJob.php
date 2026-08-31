@@ -21,7 +21,6 @@ class ProcessPncpPageJob implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    // Aumentado o timeout para 10 minutos para acomodar o usleep no processamento de até 50 itens
     public $timeout = 600;
 
     // Se a API do governo cair, ele tenta rodar esse job até 5 vezes
@@ -100,11 +99,12 @@ class ProcessPncpPageJob implements ShouldQueue
 
                 if ($cnpj && $ano && $sequencial) 
                 {
-                    // Adiciona o array de arquivos/documentos ao payload do item
                     $item->documentos = $client->getArquivos($cnpj, $ano, $sequencial);
 
-                    // Dorme 0.2 segundos (200.000 microssegundos) para evitar DDoS e 429 Too Many Requests
-                    usleep(200000);
+                    $delayMs = max(0, (int) config('pncp.document_delay_ms', 80));
+                    if ($delayMs > 0) {
+                        usleep($delayMs * 1000);
+                    }
                 } 
                 else 
                 {
@@ -123,7 +123,7 @@ class ProcessPncpPageJob implements ShouldQueue
         {
             if ($error instanceof RequestException && $error->response->status() === 429) 
             {
-                $pauseMinutes = 5; // 5 minutos de pausa
+                $pauseMinutes = max(1, (int) config('pncp.circuit_breaker_minutes', 2));
                 $circuitBreaker->trip($pauseMinutes);
                 
                 Log::warning("Erro 429 (Too Many Requests) no PNCP! Ativando Circuit Breaker por {$pauseMinutes} minutos. Job da página {$this->pagina} adiado.");
