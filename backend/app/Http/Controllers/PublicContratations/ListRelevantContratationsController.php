@@ -31,6 +31,7 @@ class ListRelevantContratationsController extends Controller
             'user_id'     => $user->id,
             'filters'     => (array) $dto,
             'results'     => [
+                'count'       => $result->count,
                 'count_page'  => $result->count_page,
                 'has_more'    => $result->has_more,
             ],
@@ -39,7 +40,9 @@ class ListRelevantContratationsController extends Controller
 
         return response()->json([
             'data'        => $contratations,
+            'page'        => $result->page,
             'count_page'  => $result->count_page,
+            'count'       => $result->count,
             'next_cursor' => $result->next_cursor,
             'has_more'    => $result->has_more,
         ]);
