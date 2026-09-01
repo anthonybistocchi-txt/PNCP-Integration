@@ -17,15 +17,17 @@ class SaveOrUpdateUserKeywordController extends Controller
 
     public function saveOrUpdate(SaveUserKeywordRequest $request, ?int $id = null): JsonResponse
     {
-        $dto     = $request->toDTO(Auth::id(), $id);
-        $keyword = $this->action->saveOrUpdate($dto);
+        $dto      = $request->toDTO(Auth::id(), $id);
+        $keywords = $this->action->saveOrUpdate($dto);
 
-        $status  = $id ? 200 : 201;
-        $msg     = $id ? 'Palavra-chave atualizada com sucesso.' : 'Palavra-chave cadastrada com sucesso.';
+        $status = $id ? 200 : 201;
+        $msg    = $id ? 'Palavra-chave atualizada com sucesso.' : 'Palavras-chave cadastradas com sucesso.';
 
         return response()->json([
             'message' => $msg,
-            'data'    => new UserKeywordResource($keyword),
+            'data'    => $id
+                ? new UserKeywordResource($keywords)
+                : UserKeywordResource::collection($keywords),
         ], $status);
     }
 }

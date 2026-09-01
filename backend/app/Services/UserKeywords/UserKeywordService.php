@@ -20,19 +20,19 @@ class UserKeywordService
         return $this->repository->listByUserId($userId);
     }
 
-    public function saveOrUpdate(SaveUserKeywordDTO $dto): UserKeyword
+    public function saveOrUpdate(SaveUserKeywordDTO $dto): UserKeyword|Collection
     {
-        if ($dto->id)
-        {
-            $keyword = $this->repository->findByKeyword($dto->userId, $dto->keyword);
+        if ($dto->id) {
+            $keyword = $this->repository->findByKeyword($dto->userId, $dto->keywords[0]);
 
-            if ($keyword && $keyword->id !== $dto->id)
-            {
+            if ($keyword && $keyword->id !== $dto->id) {
                 throw new ResourceConflictException("Esta palavra-chave já está cadastrada para o usuário.");
             }
+
+            return $this->repository->saveOrUpdate($dto);
         }
 
-        return $this->repository->saveOrUpdate($dto);
+        return $this->repository->upsertMany($dto->userId, $dto->keywords);
     }
 
     public function delete(int $id, int $userId): void

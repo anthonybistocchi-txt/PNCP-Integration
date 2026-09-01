@@ -20,12 +20,38 @@ class UserKeywordRepository
         return UserKeyword::updateOrCreate(
             [
                 'user_id' => $dto->userId,
-                'keyword' => $dto->keyword
+                'keyword' => $dto->keywords[0],
             ],
             [
                 'id' => $dto->id
             ]
         );
+    }
+
+    /**
+     * @param list<string> $keywords
+     */
+    public function upsertMany(int $userId, array $keywords): Collection
+    {
+        $now = now();
+
+        $rows = array_map(static fn(string $keyword): array => [
+            'user_id'    => $userId,
+            'keyword'    => $keyword,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ], $keywords);
+
+        UserKeyword::upsert(
+            $rows,
+            ['user_id', 'keyword'],
+            ['updated_at']
+        );
+
+        return UserKeyword::where('user_id', $userId)
+            ->whereIn('keyword', $keywords)
+            ->orderBy('id')
+            ->get();
     }
 
     public function delete(int $id, int $userId): bool
