@@ -100,14 +100,17 @@ class PublicContratationRepository
      */
     public function getRelevantByKeywords(array $keywords, ListRelevantContratationsDTO $dto): PaginatedResultDTO
     {
-        // tsquery format for OR: word1 | word2
-        $tsQueryStr = implode(' | ', $keywords);
+        $placeholders = implode(' || ', array_fill(
+            0,
+            count($keywords),
+            "phraseto_tsquery('portuguese', ?)"
+        ));
 
         $query = PublicContratation::query()
-            ->where('situacao_compra_id', 1) // Apenas registros ativos
+            ->where('situacao_compra_id', 1)
             ->whereRaw(
-                "to_tsvector('portuguese', objeto_compra) @@ to_tsquery('portuguese', ?)",
-                [$tsQueryStr]
+                "to_tsvector('portuguese', objeto_compra) @@ ({$placeholders})",
+                $keywords
             );
 
         $cursorData = $this->decodeCursor($dto->cursor);
