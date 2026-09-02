@@ -3,7 +3,9 @@
 namespace App\Http\Requests\UserKeywords;
 
 use App\DTOs\UserKeywords\SaveUserKeywordDTO;
+use App\Models\UserKeywords\UserKeyword;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class SaveUserKeywordRequest extends FormRequest
 {
@@ -19,6 +21,7 @@ class SaveUserKeywordRequest extends FormRequest
             'keyword'    => 'required_without:keywords|string|max:255',
             'keywords'   => 'required_without:keyword|array|min:1',
             'keywords.*' => 'required|string|max:255',
+            'type'       => ['nullable', 'string', Rule::in([UserKeyword::TYPE_INCLUDE, UserKeyword::TYPE_EXCLUDE])],
         ];
     }
 
@@ -35,6 +38,7 @@ class SaveUserKeywordRequest extends FormRequest
             'keywords.*.required'    => 'Cada palavra-chave é obrigatória.',
             'keywords.*.string'      => 'Cada palavra-chave deve ser um texto.',
             'keywords.*.max'         => 'Cada palavra-chave não pode ter mais de 255 caracteres.',
+            'type.in'                => 'O tipo deve ser "include" ou "exclude".',
         ];
     }
 
@@ -49,6 +53,7 @@ class SaveUserKeywordRequest extends FormRequest
         return new SaveUserKeywordDTO(
             userId: $userId,
             keywords: $keywords,
+            type: $this->validated('type') ?? UserKeyword::TYPE_INCLUDE,
             id: $this->validated('id') ?? $id
         );
     }

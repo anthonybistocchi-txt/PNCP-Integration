@@ -5,6 +5,9 @@ use App\Http\Controllers\Auth\MeController;
 use App\Http\Controllers\Infra\HealthCheckController;
 use App\Http\Controllers\PublicContratations\ListPublicContratationsController;
 use App\Http\Controllers\PublicContratations\ListRelevantContratationsController;
+use App\Http\Controllers\UserContratationFilters\DeleteUserContratationFilterController;
+use App\Http\Controllers\UserContratationFilters\ListUserContratationFiltersController;
+use App\Http\Controllers\UserContratationFilters\SaveOrUpdateUserContratationFilterController;
 use App\Http\Controllers\UserKeywords\SaveOrUpdateUserKeywordController;
 use App\Http\Controllers\UserKeywords\ListUserKeywordsController;
 use App\Http\Controllers\UserKeywords\DeleteUserKeywordController;
@@ -21,6 +24,12 @@ Route::middleware('auth.api')->group(function () {
         Route::post('/', [SaveOrUpdateUserKeywordController::class, 'saveOrUpdate'])->middleware('throttle:60,1');
         Route::put('/{id}', [SaveOrUpdateUserKeywordController::class, 'saveOrUpdate'])->middleware('throttle:60,1');
         Route::delete('/{id}', [DeleteUserKeywordController::class, 'delete'])->middleware('throttle:60,1');
+    });
+
+    Route::prefix('v1/filters')->group(function () {
+        Route::get('/', [ListUserContratationFiltersController::class, 'listByUserId'])->middleware('throttle:60,1');
+        Route::post('/', [SaveOrUpdateUserContratationFilterController::class, 'saveOrUpdate'])->middleware('throttle:60,1');
+        Route::delete('/{id}', [DeleteUserContratationFilterController::class, 'delete'])->middleware('throttle:60,1');
     });
 
     Route::prefix('v1/contracts')->group(function () {

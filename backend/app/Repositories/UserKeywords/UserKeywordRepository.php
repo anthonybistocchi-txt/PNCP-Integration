@@ -15,15 +15,16 @@ class UserKeywordRepository
             ->get();
     }
 
-    public function saveOrUpdate(SaveUserKeywordDTO $dto): ?UserKeyword
+    public function saveOrUpdate(SaveUserKeywordDTO $keywordToSave): ?UserKeyword
     {
         return UserKeyword::updateOrCreate(
             [
-                'user_id' => $dto->userId,
-                'keyword' => $dto->keywords[0],
+                'user_id' => $keywordToSave->userId,
+                'keyword' => $keywordToSave->keywords[0],
+                'type'    => $keywordToSave->type,
             ],
             [
-                'id' => $dto->id
+                'id' => $keywordToSave->id
             ]
         );
     }
@@ -31,24 +32,26 @@ class UserKeywordRepository
     /**
      * @param list<string> $keywords
      */
-    public function upsertMany(int $userId, array $keywords): Collection
+    public function upsertMany(int $userId, array $keywords, string $type): Collection
     {
         $now = now();
 
-        $rows = array_map(static fn(string $keyword): array => [
+        $keywordRows = array_map(static fn(string $keyword): array => [
             'user_id'    => $userId,
             'keyword'    => $keyword,
+            'type'       => $type,
             'created_at' => $now,
             'updated_at' => $now,
         ], $keywords);
 
         UserKeyword::upsert(
-            $rows,
-            ['user_id', 'keyword'],
+            $keywordRows,
+            ['user_id', 'keyword', 'type'],
             ['updated_at']
         );
 
         return UserKeyword::where('user_id', $userId)
+            ->where('type', $type)
             ->whereIn('keyword', $keywords)
             ->orderBy('id')
             ->get();
@@ -61,10 +64,11 @@ class UserKeywordRepository
             ->delete() > 0;
     }
 
-    public function findByKeyword(int $userId, string $keyword): ?UserKeyword
+    public function findByKeyword(int $userId, string $keyword, string $type): ?UserKeyword
     {
         return UserKeyword::where('user_id', $userId)
             ->where('keyword', $keyword)
+            ->where('type', $type)
             ->first();
     }
 }
