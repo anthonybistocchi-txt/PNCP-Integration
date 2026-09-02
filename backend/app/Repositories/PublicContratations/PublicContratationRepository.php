@@ -6,7 +6,9 @@ use App\DTOs\Paginate\PaginatedResultDTO;
 use App\DTOs\PublicContratations\CursorDTO;
 use App\DTOs\PublicContratations\ListPublicContratationsDTO;
 use App\DTOs\PublicContratations\ListRelevantContratationsDTO;
+use App\DTOs\PublicContratations\PersonalizedContratationFiltersDTO;
 use App\Models\PublicContratations\PublicContratation;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 
 class PublicContratationRepository
@@ -25,137 +27,153 @@ class PublicContratationRepository
     {
         $query = PublicContratation::query()
             ->when($dto->dataInicial && $dto->dataFinal, function ($query) use ($dto) {
-                $coluna = $dto->tipoData === 'atualizacao' ? 'data_atualizacao_global' : 'data_publicacao_pncp';
+                $colunaData = $dto->tipoData === 'atualizacao' ? 'data_atualizacao_global' : 'data_publicacao_pncp';
 
-                $query->whereBetween($coluna, [
+                $query->whereBetween($colunaData, [
                     $this->formatDate($dto->dataInicial, '00:00:00'),
                     $this->formatDate($dto->dataFinal, '23:59:59'),
                 ]);
             })
-            ->when($dto->uf, fn($q, $uf)                                  => $q->where('uf', $uf))
-            ->when($dto->codigoMunicipioIbge, fn($q, $ibge)               => $q->where('codigo_municipio_ibge', $ibge))
-            ->when($dto->codigoModalidadeContratacao, fn($q, $modalidade) => $q->where('codigo_modalidade_contratacao', $modalidade))
-            ->when($dto->poderId, fn($q, $val)                            => $q->where('payload_completo->orgaoEntidade->poderId', $val))
-            ->when($dto->esferaId, fn($q, $val)                           => $q->where('payload_completo->orgaoEntidade->esferaId', $val))
-            ->when($dto->situacaoCompraId, fn($q, $val)                   => $q->where('payload_completo->situacaoCompraId', (int) $val))
-            ->when($dto->modoDisputaId, fn($q, $val)                      => $q->where('payload_completo->modoDisputaId', (int) $val))
-            ->when($dto->tipoInstrumentoConvocatorioCodigo, fn($q, $val)  => $q->where('payload_completo->tipoInstrumentoConvocatorioCodigo', (int) $val))
-            ->when($dto->fontesOrcamentarias, fn($q, $val)                => $q->whereJsonContains('payload_completo->fontesOrcamentarias', ['codigo' => (int) $val]));
+            ->when($dto->uf, fn($query, $uf)                             => $query->where('uf', $uf))
+            ->when($dto->codigoMunicipioIbge, fn($query, $codigoIbge)    => $query->where('codigo_municipio_ibge', $codigoIbge))
+            ->when($dto->codigoModalidadeContratacao, fn($query, $codigoModalidade) => $query->where('codigo_modalidade_contratacao', $codigoModalidade))
+            ->when($dto->poderId, fn($query, $poderId)                   => $query->where('payload_completo->orgaoEntidade->poderId', $poderId))
+            ->when($dto->esferaId, fn($query, $esferaId)                 => $query->where('payload_completo->orgaoEntidade->esferaId', $esferaId))
+            ->when($dto->situacaoCompraId, fn($query, $situacaoCompraId) => $query->where('situacao_compra_id', (int) $situacaoCompraId))
+            ->when($dto->modoDisputaId, fn($query, $modoDisputaId)       => $query->where('payload_completo->modoDisputaId', (int) $modoDisputaId))
+            ->when($dto->tipoInstrumentoConvocatorioCodigo, fn($query, $tipoInstrumentoCodigo) => $query->where('payload_completo->tipoInstrumentoConvocatorioCodigo', (int) $tipoInstrumentoCodigo))
+            ->when($dto->fontesOrcamentarias, fn($query, $codigoFonteOrcamentaria) => $query->whereJsonContains('payload_completo->fontesOrcamentarias', ['codigo' => (int) $codigoFonteOrcamentaria]));
 
-        // Aplica o cursor para pular registros já vistos.
-        // O cursor encoda o último (data_publicacao_pncp, numero_controle_pncp) recebido.
-        $cursorData = $this->decodeCursor($dto->cursor);
-
-        // Clonamos a query base ANTES de aplicar orderBy, limit ou o cursor
-        // para pegar o total real de registros que batem com os filtros principais.
-        $baseQuery = clone $query;
-        
-        $count = $baseQuery->count();
-        $page = 1;
-
-        if ($cursorData) 
-        {
-            // Para descobrir em qual "página" estamos,
-            // contamos quantos registros ficaram para trás (antes do cursor na ordenação).
-            $skippedQuery = clone $baseQuery;
-            $skippedCount = $skippedQuery->where(function ($q) use ($cursorData) {
-                $q->where('data_publicacao_pncp', '>', $cursorData->date)
-                  ->orWhere(function ($q) use ($cursorData) {
-                      $q->where('data_publicacao_pncp', '=', $cursorData->date)
-                        ->where('numero_controle_pncp', '<=', $cursorData->numero_controle);
-                  });
-            })->count();
-
-            $page = (int) floor($skippedCount / $dto->limit) + 1;
-
-            $query->where(function ($q) use ($cursorData) {
-                $q->where('data_publicacao_pncp', '<', $cursorData->date)
-                  ->orWhere(function ($q) use ($cursorData) {
-                      $q->where('data_publicacao_pncp', '=', $cursorData->date)
-                        ->where('numero_controle_pncp', '>', $cursorData->numero_controle);
-                  });
-            });
-        }
-
-        $data = $query
-            ->orderBy('data_publicacao_pncp', 'desc')
-            ->orderBy('numero_controle_pncp', 'asc')
-            ->limit($dto->limit)
-            ->get();
-
-        $nextCursor = $this->buildNextCursor($data, $dto->limit);
-
-        return new PaginatedResultDTO(
-            data:        $data,
-            page:        $page,
-            count_page:  $data->count(),
-            count:       $count,
-            next_cursor: $nextCursor,
-            has_more:    $nextCursor !== null,
-        );
+        return $this->paginateByCursor($query, $dto->cursor, $dto->limit);
     }
 
     /**
-     * Busca licitações relevantes baseadas num array de palavras chaves
+     * Busca personalizada: combina os filtros salvos do cliente (uf, modalidade,
+     * esfera, poder, situação da compra, modo de disputa, tipo de instrumento
+     * convocatório e fontes orçamentárias) com palavras-chave de inclusão e
+     * exclusão, tudo em uma única query.
+     *
+     * Cada dimensão de filtro vazia não restringe a busca. Palavras-chave de
+     * inclusão são combinadas com OR (basta bater com uma); palavras-chave de
+     * exclusão descartam o registro se bater com qualquer uma delas.
      */
-    public function getRelevantByKeywords(array $keywords, ListRelevantContratationsDTO $dto): PaginatedResultDTO
+    public function searchPersonalized(PersonalizedContratationFiltersDTO $filters, ListRelevantContratationsDTO $dto): PaginatedResultDTO
     {
-        $placeholders = implode(' || ', array_fill(
+        if ($filters->hasNoActiveFilters()) {
+            return $this->emptyResult();
+        }
+
+        // Sem filtro explícito de situação, mantém o comportamento padrão: só ativas.
+        $situacoesCompraPermitidas = $filters->situacaoCompraId ?: [1];
+
+        $query = PublicContratation::query()
+            ->whereIn('situacao_compra_id', $situacoesCompraPermitidas)
+            ->when($filters->uf, fn($query, $ufsPermitidas)                             => $query->whereIn('uf', $ufsPermitidas))
+            ->when($filters->codigoModalidadeContratacao, fn($query, $modalidadesPermitidas) => $query->whereIn('codigo_modalidade_contratacao', $modalidadesPermitidas))
+            ->when($filters->poderId, fn($query, $poderesPermitidos)                     => $query->whereIn('payload_completo->orgaoEntidade->poderId', $poderesPermitidos))
+            ->when($filters->esferaId, fn($query, $esferasPermitidas)                    => $query->whereIn('payload_completo->orgaoEntidade->esferaId', $esferasPermitidas))
+            ->when($filters->modoDisputaId, fn($query, $modosDisputaPermitidos)          => $query->whereIn('payload_completo->modoDisputaId', $modosDisputaPermitidos))
+            ->when($filters->tipoInstrumentoConvocatorioCodigo, fn($query, $tiposInstrumentoPermitidos) => $query->whereIn('payload_completo->tipoInstrumentoConvocatorioCodigo', $tiposInstrumentoPermitidos))
+            ->when($filters->fontesOrcamentarias, function ($query, $fontesOrcamentariasPermitidas) {
+                $query->where(function ($query) use ($fontesOrcamentariasPermitidas) {
+                    foreach ($fontesOrcamentariasPermitidas as $codigoFonteOrcamentaria) {
+                        $query->orWhereJsonContains('payload_completo->fontesOrcamentarias', ['codigo' => (int) $codigoFonteOrcamentaria]);
+                    }
+                });
+            })
+            ->when($filters->includeKeywords, fn($query, $palavrasParaIncluir) => $query->whereRaw(
+                $this->buildFullTextSearchExpression($palavrasParaIncluir),
+                $palavrasParaIncluir
+            ))
+            ->when($filters->excludeKeywords, fn($query, $palavrasParaExcluir) => $query->whereRaw(
+                'NOT (' . $this->buildFullTextSearchExpression($palavrasParaExcluir) . ')',
+                $palavrasParaExcluir
+            ));
+
+        return $this->paginateByCursor($query, $dto->cursor, $dto->limit);
+    }
+
+    /**
+     * Monta a expressão de full text search em português, unindo cada frase
+     * com OR (o registro entra se bater com qualquer uma das palavras-chave).
+     */
+    private function buildFullTextSearchExpression(array $keywords): string
+    {
+        $condicoesPorFrase = implode(' || ', array_fill(
             0,
             count($keywords),
             "phraseto_tsquery('portuguese', ?)"
         ));
 
-        $query = PublicContratation::query()
-            ->where('situacao_compra_id', 1)
-            ->whereRaw(
-                "to_tsvector('portuguese', objeto_compra) @@ ({$placeholders})",
-                $keywords
-            );
+        return "to_tsvector('portuguese', objeto_compra) @@ ({$condicoesPorFrase})";
+    }
 
-        $cursorData = $this->decodeCursor($dto->cursor);
+    /**
+     * Aplica keyset pagination (cursor-based) numa query já filtrada e
+     * devolve o resultado paginado. Compartilhado por todas as buscas de
+     * contratações para não duplicar a lógica de cursor/contagem.
+     */
+    private function paginateByCursor(Builder $query, ?string $cursor, int $limit): PaginatedResultDTO
+    {
+        $cursorData = $this->decodeCursor($cursor);
 
+        // Clonamos a query base ANTES de aplicar orderBy, limit ou o cursor
+        // para pegar o total real de registros que batem com os filtros principais.
         $baseQuery = clone $query;
-        $count = $baseQuery->count();
-        $page = 1;
 
-        if ($cursorData) 
-        {
+        $totalCount = $baseQuery->count();
+        $currentPage = 1;
+
+        if ($cursorData) {
+            // Para descobrir em qual "página" estamos,
+            // contamos quantos registros ficaram para trás (antes do cursor na ordenação).
             $skippedQuery = clone $baseQuery;
-            $skippedCount = $skippedQuery->where(function ($q) use ($cursorData) {
-                $q->where('data_publicacao_pncp', '>', $cursorData->date)
-                  ->orWhere(function ($q) use ($cursorData) {
-                      $q->where('data_publicacao_pncp', '=', $cursorData->date)
-                        ->where('numero_controle_pncp', '<=', $cursorData->numero_controle);
-                  });
+            $skippedCount = $skippedQuery->where(function ($query) use ($cursorData) {
+                $query->where('data_publicacao_pncp', '>', $cursorData->date)
+                    ->orWhere(function ($query) use ($cursorData) {
+                        $query->where('data_publicacao_pncp', '=', $cursorData->date)
+                            ->where('numero_controle_pncp', '<=', $cursorData->numero_controle);
+                    });
             })->count();
 
-            $page = (int) floor($skippedCount / $dto->limit) + 1;
+            $currentPage = (int) floor($skippedCount / $limit) + 1;
 
-            $query->where(function ($q) use ($cursorData) {
-                $q->where('data_publicacao_pncp', '<', $cursorData->date)
-                  ->orWhere(function ($q) use ($cursorData) {
-                      $q->where('data_publicacao_pncp', '=', $cursorData->date)
-                        ->where('numero_controle_pncp', '>', $cursorData->numero_controle);
-                  });
+            $query->where(function ($query) use ($cursorData) {
+                $query->where('data_publicacao_pncp', '<', $cursorData->date)
+                    ->orWhere(function ($query) use ($cursorData) {
+                        $query->where('data_publicacao_pncp', '=', $cursorData->date)
+                            ->where('numero_controle_pncp', '>', $cursorData->numero_controle);
+                    });
             });
         }
 
-        $data = $query
+        $contratationsPage = $query
             ->orderBy('data_publicacao_pncp', 'desc')
             ->orderBy('numero_controle_pncp', 'asc')
-            ->limit($dto->limit)
+            ->limit($limit)
             ->get();
 
-        $nextCursor = $this->buildNextCursor($data, $dto->limit);
+        $nextCursor = $this->buildNextCursor($contratationsPage, $limit);
 
         return new PaginatedResultDTO(
-            data:        $data,
-            page:        $page,
-            count_page:  $data->count(),
-            count:       $count,
+            data:        $contratationsPage,
+            page:        $currentPage,
+            count_page:  $contratationsPage->count(),
+            count:       $totalCount,
             next_cursor: $nextCursor,
             has_more:    $nextCursor !== null,
+        );
+    }
+
+    private function emptyResult(): PaginatedResultDTO
+    {
+        return new PaginatedResultDTO(
+            data:        collect([]),
+            page:        1,
+            count_page:  0,
+            count:       0,
+            next_cursor: null,
+            has_more:    false,
         );
     }
 
@@ -163,17 +181,17 @@ class PublicContratationRepository
      * Gera o cursor para a próxima página a partir do último item retornado.
      * Retorna null quando não há mais páginas (resultado menor que o limit solicitado).
      */
-    private function buildNextCursor(Collection $data, int $limit): ?string
+    private function buildNextCursor(Collection $contratationsPage, int $limit): ?string
     {
-        if ($data->count() < $limit) {
+        if ($contratationsPage->count() < $limit) {
             return null;
         }
 
-        $last = $data->last();
+        $lastContratation = $contratationsPage->last();
 
         return base64_encode(json_encode([
-            'date'            => $last->data_publicacao_pncp,
-            'numero_controle' => $last->numero_controle_pncp,
+            'date'            => $lastContratation->data_publicacao_pncp,
+            'numero_controle' => $lastContratation->numero_controle_pncp,
         ]));
     }
 
@@ -187,15 +205,15 @@ class PublicContratationRepository
             return null;
         }
 
-        $decoded = json_decode(base64_decode($cursor), true);
+        $decodedCursor = json_decode(base64_decode($cursor), true);
 
-        if (!is_array($decoded) || empty($decoded['date']) || empty($decoded['numero_controle'])) {
+        if (!is_array($decodedCursor) || empty($decodedCursor['date']) || empty($decodedCursor['numero_controle'])) {
             return null;
         }
 
         return new CursorDTO(
-            date:            $decoded['date'],
-            numero_controle: $decoded['numero_controle'],
+            date:            $decodedCursor['date'],
+            numero_controle: $decodedCursor['numero_controle'],
         );
     }
 
@@ -210,4 +228,3 @@ class PublicContratationRepository
         return "{$year}-{$month}-{$day} {$time}";
     }
 }
-

@@ -20,19 +20,50 @@ class UserKeywordService
         return $this->repository->listByUserId($userId);
     }
 
-    public function saveOrUpdate(SaveUserKeywordDTO $dto): UserKeyword|Collection
+    /**
+     * Agrupa as palavras-chave do usuário por tipo (include/exclude), pronto
+     * para ser usado na montagem da busca personalizada de contratações.
+     *
+     * @return array{include: list<string>, exclude: list<string>}
+     */
+    public function listGroupedByType(int $userId): array
     {
-        if ($dto->id) {
-            $keyword = $this->repository->findByKeyword($dto->userId, $dto->keywords[0]);
+        $userKeywords = $this->repository->listByUserId($userId);
 
-            if ($keyword && $keyword->id !== $dto->id) {
+        $keywordsGroupedByType = [
+            UserKeyword::TYPE_INCLUDE => [],
+            UserKeyword::TYPE_EXCLUDE => [],
+        ];
+
+        foreach ($userKeywords as $userKeyword) {
+            $keywordsGroupedByType[$userKeyword->type][] = $userKeyword->keyword;
+        }
+
+        return $keywordsGroupedByType;
+    }
+
+    public function saveOrUpdate(SaveUserKeywordDTO $keywordToSave): UserKeyword|Collection
+    {
+        if ($keywordToSave->id) 
+        {
+            $existingKeyword = $this->repository->findByKeyword(
+                $keywordToSave->userId,
+                $keywordToSave->keywords[0],
+                $keywordToSave->type
+            );
+
+            if ($existingKeyword && $existingKeyword->id !== $keywordToSave->id) {
                 throw new ResourceConflictException("Esta palavra-chave já está cadastrada para o usuário.");
             }
 
-            return $this->repository->saveOrUpdate($dto);
+            return $this->repository->saveOrUpdate($keywordToSave);
         }
 
-        return $this->repository->upsertMany($dto->userId, $dto->keywords);
+        return $this->repository->upsertMany(
+            $keywordToSave->userId,
+            $keywordToSave->keywords,
+            $keywordToSave->type
+        );
     }
 
     public function delete(int $id, int $userId): void

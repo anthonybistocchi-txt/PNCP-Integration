@@ -5,6 +5,7 @@ namespace App\Services\PublicContratations;
 use App\DTOs\Paginate\PaginatedResultDTO;
 use App\DTOs\PublicContratations\ListPublicContratationsDTO;
 use App\DTOs\PublicContratations\ListRelevantContratationsDTO;
+use App\DTOs\PublicContratations\PersonalizedContratationFiltersDTO;
 use App\Repositories\PublicContratations\PublicContratationRepository;
 
 class PublicContratationsService
@@ -22,21 +23,11 @@ class PublicContratationsService
     }
 
     /**
-     * Busca contratações relevantes por palavras-chave.
+     * Busca contratações personalizadas: combina os filtros salvos do cliente
+     * (uf, modalidade, esfera, etc) com palavras-chave de inclusão e exclusão.
      */
-    public function getRelevantByKeywords(array $keywords, ListRelevantContratationsDTO $dto): PaginatedResultDTO
+    public function getPersonalized(PersonalizedContratationFiltersDTO $filters, ListRelevantContratationsDTO $dto): PaginatedResultDTO
     {
-        if (empty($keywords)) {
-            return new PaginatedResultDTO(
-                data:        collect([]),
-                page:        1,
-                count_page:  0,
-                count:       0,
-                next_cursor: null,
-                has_more:    false,
-            );
-        }
-        return $this->repository->getRelevantByKeywords($keywords, $dto);
+        return $this->repository->searchPersonalized($filters, $dto);
     }
 }
-
