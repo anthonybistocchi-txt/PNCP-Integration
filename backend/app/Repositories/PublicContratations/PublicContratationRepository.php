@@ -8,6 +8,7 @@ use App\DTOs\PublicContratations\ListPublicContratationsDTO;
 use App\DTOs\PublicContratations\ListRelevantContratationsDTO;
 use App\DTOs\PublicContratations\PersonalizedContratationFiltersDTO;
 use App\Models\PublicContratations\PublicContratation;
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 
@@ -20,7 +21,7 @@ class PublicContratationRepository
      * Com OFFSET, a página 500 obriga o PostgreSQL a ler e descartar 14.000+ linhas.
      * Com cursor, a query sempre localiza diretamente o ponto de partida pelo índice.
      *
-     * Formato do cursor: Base64(JSON({last_date, last_numero_controle}))
+     * Formato do cursor: Base64 URL-safe de JSON({date: Y-m-d H:i:s, numero_controle})
      * Ordenação estável: data_publicacao_pncp DESC, numero_controle_pncp ASC
      */
     public function list(ListPublicContratationsDTO $dto): PaginatedResultDTO
@@ -188,11 +189,14 @@ class PublicContratationRepository
         }
 
         $lastContratation = $contratationsPage->last();
+        $publishedAt = $lastContratation->data_publicacao_pncp;
 
-        return base64_encode(json_encode([
-            'date'            => $lastContratation->data_publicacao_pncp,
-            'numero_controle' => $lastContratation->numero_controle_pncp,
-        ]));
+        return $this->encodeCursor(
+            date: $publishedAt instanceof \DateTimeInterface
+                ? $publishedAt->format('Y-m-d H:i:s')
+                : (string) $publishedAt,
+            numeroControle: (string) $lastContratation->numero_controle_pncp,
+        );
     }
 
     /**
@@ -205,16 +209,52 @@ class PublicContratationRepository
             return null;
         }
 
-        $decodedCursor = json_decode(base64_decode($cursor), true);
+        $decodedCursor = json_decode($this->decodeCursorPayload($cursor), true);
 
         if (!is_array($decodedCursor) || empty($decodedCursor['date']) || empty($decodedCursor['numero_controle'])) {
             return null;
         }
 
         return new CursorDTO(
-            date:            $decodedCursor['date'],
-            numero_controle: $decodedCursor['numero_controle'],
+            date:            $this->normalizeCursorDate((string) $decodedCursor['date']),
+            numero_controle: (string) $decodedCursor['numero_controle'],
         );
+    }
+
+    /**
+     * O banco guarda data_publicacao_pncp como timestamp sem timezone (horário de Brasília).
+     * json_encode() de um Carbon gera ISO em UTC (ex: 2026-09-01T15:29:10.000000Z),
+     * 3 horas à frente do valor persistido. A query então não descarta a 1ª página.
+     */
+    private function encodeCursor(string $date, string $numeroControle): string
+    {
+        $payload = json_encode([
+            'date'            => $date,
+            'numero_controle' => $numeroControle,
+        ], JSON_UNESCAPED_SLASHES);
+
+        return rtrim(strtr(base64_encode((string) $payload), '+/', '-_'), '=');
+    }
+
+    private function decodeCursorPayload(string $cursor): string
+    {
+        $normalized = strtr(str_replace(' ', '+', $cursor), '-_', '+/');
+        $padding = strlen($normalized) % 4;
+
+        if ($padding > 0) {
+            $normalized .= str_repeat('=', 4 - $padding);
+        }
+
+        $decoded = base64_decode($normalized, true);
+
+        return $decoded !== false ? $decoded : (string) base64_decode($cursor);
+    }
+
+    private function normalizeCursorDate(string $date): string
+    {
+        return Carbon::parse($date)
+            ->timezone((string) config('app.timezone'))
+            ->format('Y-m-d H:i:s');
     }
 
     private function formatDate(string $dateString, string $time): string
