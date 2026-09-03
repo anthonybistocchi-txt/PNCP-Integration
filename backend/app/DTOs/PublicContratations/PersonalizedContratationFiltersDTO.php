@@ -38,7 +38,7 @@ final class PersonalizedContratationFiltersDTO
 
     /**
      * Verdadeiro quando o cliente não configurou nenhuma dimensão de filtro
-     * nem nenhuma palavra-chave de inclusão. Usado como guarda para não
+     * nem nenhuma palavra-chave de inclusão ou exclusão. Usado como guarda para não
      * devolver a base inteira de contratações quando nada foi configurado.
      */
     public function hasNoActiveFilters(): bool
@@ -51,6 +51,7 @@ final class PersonalizedContratationFiltersDTO
             && empty($this->modoDisputaId)
             && empty($this->tipoInstrumentoConvocatorioCodigo)
             && empty($this->fontesOrcamentarias)
-            && empty($this->includeKeywords);
+            && empty($this->includeKeywords)
+            && empty($this->excludeKeywords);
     }
 }

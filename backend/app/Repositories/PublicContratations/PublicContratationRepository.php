@@ -51,12 +51,13 @@ class PublicContratationRepository
     /**
      * Busca personalizada: combina os filtros salvos do cliente (uf, modalidade,
      * esfera, poder, situação da compra, modo de disputa, tipo de instrumento
-     * convocatório e fontes orçamentárias) com palavras-chave de inclusão e
-     * exclusão, tudo em uma única query.
+     * convocatório e fontes orçamentárias) com palavras de inclusão e exclusão,
+     * tudo em uma única query.
      *
-     * Cada dimensão de filtro vazia não restringe a busca. Palavras-chave de
-     * inclusão são combinadas com OR (basta bater com uma); palavras-chave de
-     * exclusão descartam o registro se bater com qualquer uma delas.
+     * Política de palavras:
+     * - include NÃO escolhe quem entra sozinho;
+     * - exclude descarta;
+     * - exceção: se bater em exclude E também em pelo menos uma include, fica.
      */
     public function searchPersonalized(PersonalizedContratationFiltersDTO $filters, ListRelevantContratationsDTO $dto): PaginatedResultDTO
     {
@@ -82,14 +83,34 @@ class PublicContratationRepository
                     }
                 });
             })
-            ->when($filters->includeKeywords, fn($query, $palavrasParaIncluir) => $query->whereRaw(
-                $this->buildFullTextSearchExpression($palavrasParaIncluir),
-                $palavrasParaIncluir
-            ))
-            ->when($filters->excludeKeywords, fn($query, $palavrasParaExcluir) => $query->whereRaw(
-                'NOT (' . $this->buildFullTextSearchExpression($palavrasParaExcluir) . ')',
-                $palavrasParaExcluir
-            ));
+            ->when(
+                $filters->includeKeywords || $filters->excludeKeywords,
+                function ($query) use ($filters) {
+                    $excludedKeywords = $filters->excludeKeywords;
+                    $includedKeywords = $filters->includeKeywords;
+
+                    if (!$excludedKeywords) {
+                        return;
+                    }
+
+                    $excludedExpression = $this->buildFullTextSearchExpression($excludedKeywords);
+
+                    if (!$includedKeywords) {
+                        $query->whereRaw(
+                            'NOT (' . $excludedExpression . ')',
+                            $excludedKeywords
+                        );
+
+                        return;
+                    }
+
+                    $includedExpression = $this->buildFullTextSearchExpression($includedKeywords);
+                    $query->whereRaw(
+                        'NOT ((' . $excludedExpression . ') AND NOT (' . $includedExpression . '))',
+                        [...$excludedKeywords, ...$includedKeywords]
+                    );
+                }
+            );
 
         return $this->paginateByCursor($query, $dto->cursor, $dto->limit);
     }
