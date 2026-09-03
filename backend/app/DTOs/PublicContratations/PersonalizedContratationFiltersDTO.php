@@ -4,8 +4,7 @@ namespace App\DTOs\PublicContratations;
 
 /**
  * Agrupa as preferências salvas de um cliente (filtros de dimensão +
- * palavras-chave de inclusão/exclusão) para montar a busca personalizada
- * de contratações em uma única query.
+ * as palavras do modo pedido: só inclusão, só exclusão, ou as duas).
  *
  * Uma dimensão vazia significa "sem restrição" (não filtra por ela).
  */

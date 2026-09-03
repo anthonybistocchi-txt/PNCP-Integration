@@ -8,12 +8,17 @@ use App\DTOs\PublicContratations\ListPublicContratationsDTO;
 use App\DTOs\PublicContratations\ListRelevantContratationsDTO;
 use App\DTOs\PublicContratations\PersonalizedContratationFiltersDTO;
 use App\Models\PublicContratations\PublicContratation;
+use App\Support\Search\ContratationKeywordFilter;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 
 class PublicContratationRepository
 {
+    public function __construct(
+        private ContratationKeywordFilter $keywordFilter
+    ) {}
+
     /**
      * Consulta o banco de dados local usando os filtros do DTO.
      *
@@ -49,15 +54,8 @@ class PublicContratationRepository
     }
 
     /**
-     * Busca personalizada: combina os filtros salvos do cliente (uf, modalidade,
-     * esfera, poder, situação da compra, modo de disputa, tipo de instrumento
-     * convocatório e fontes orçamentárias) com palavras de inclusão e exclusão,
-     * tudo em uma única query.
-     *
-     * Política de palavras:
-     * - include NÃO escolhe quem entra sozinho;
-     * - exclude descarta;
-     * - exceção: se bater em exclude E também em pelo menos uma include, fica.
+     * Busca personalizada: dimensões salvas do cliente + palavras do modo
+     * pedido (só inclusão, só exclusão, ou A AND NOT B).
      */
     public function searchPersonalized(PersonalizedContratationFiltersDTO $filters, ListRelevantContratationsDTO $dto): PaginatedResultDTO
     {
@@ -82,52 +80,15 @@ class PublicContratationRepository
                         $query->orWhereJsonContains('payload_completo->fontesOrcamentarias', ['codigo' => (int) $codigoFonteOrcamentaria]);
                     }
                 });
-            })
-            ->when(
-                $filters->includeKeywords || $filters->excludeKeywords,
-                function ($query) use ($filters) {
-                    $excludedKeywords = $filters->excludeKeywords;
-                    $includedKeywords = $filters->includeKeywords;
+            });
 
-                    if (!$excludedKeywords) {
-                        return;
-                    }
-
-                    $excludedExpression = $this->buildFullTextSearchExpression($excludedKeywords);
-
-                    if (!$includedKeywords) {
-                        $query->whereRaw(
-                            'NOT (' . $excludedExpression . ')',
-                            $excludedKeywords
-                        );
-
-                        return;
-                    }
-
-                    $includedExpression = $this->buildFullTextSearchExpression($includedKeywords);
-                    $query->whereRaw(
-                        'NOT ((' . $excludedExpression . ') AND NOT (' . $includedExpression . '))',
-                        [...$excludedKeywords, ...$includedKeywords]
-                    );
-                }
-            );
+        $this->keywordFilter->apply(
+            $query,
+            $filters->includeKeywords,
+            $filters->excludeKeywords
+        );
 
         return $this->paginateByCursor($query, $dto->cursor, $dto->limit);
-    }
-
-    /**
-     * Monta a expressão de full text search em português, unindo cada frase
-     * com OR (o registro entra se bater com qualquer uma das palavras-chave).
-     */
-    private function buildFullTextSearchExpression(array $keywords): string
-    {
-        $condicoesPorFrase = implode(' || ', array_fill(
-            0,
-            count($keywords),
-            "phraseto_tsquery('portuguese', ?)"
-        ));
-
-        return "to_tsvector('portuguese', objeto_compra) @@ ({$condicoesPorFrase})";
     }
 
     /**

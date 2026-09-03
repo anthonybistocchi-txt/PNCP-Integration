@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\PublicContratations;
 
 use App\Actions\PublicContratations\ListRelevantContratationsAction;
+use App\Enums\PublicContratations\KeywordMatchMode;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\PublicContratations\ListRelevantContratationsRequest;
 use App\Resources\PublicContratations\ListPublicContratationsResource;
@@ -16,19 +17,37 @@ class ListRelevantContratationsController extends Controller
         private ListRelevantContratationsAction $action
     ) {}
 
-    public function list(ListRelevantContratationsRequest $request): JsonResponse
+    public function listInclude(ListRelevantContratationsRequest $request): JsonResponse
     {
+        return $this->respond($request, KeywordMatchMode::Include);
+    }
+
+    public function listExclude(ListRelevantContratationsRequest $request): JsonResponse
+    {
+        return $this->respond($request, KeywordMatchMode::Exclude);
+    }
+
+    public function listBoth(ListRelevantContratationsRequest $request): JsonResponse
+    {
+        return $this->respond($request, KeywordMatchMode::Both);
+    }
+
+    private function respond(
+        ListRelevantContratationsRequest $request,
+        KeywordMatchMode $mode
+    ): JsonResponse {
         $startedAt = now();
         $user = Auth::user();
 
         $dto    = $request->toDTO();
-        $result = $this->action->listByUserId($user->id, $dto);
+        $result = $this->action->listByUserId($user->id, $dto, $mode);
 
         $contratations = ListPublicContratationsResource::collection($result->data);
 
         Log::info(json_encode([
             'event'       => 'API_RELEVANT_SEARCH_SUCCESS',
             'user_id'     => $user->id,
+            'mode'        => $mode->value,
             'filters'     => (array) $dto,
             'results'     => [
                 'count'       => $result->count,
@@ -48,4 +67,3 @@ class ListRelevantContratationsController extends Controller
         ]);
     }
 }
-
