@@ -22,11 +22,6 @@ class ListRelevantContratationsController extends Controller
         return $this->respond($request, KeywordMatchMode::Include);
     }
 
-    public function listExclude(ListRelevantContratationsRequest $request): JsonResponse
-    {
-        return $this->respond($request, KeywordMatchMode::Exclude);
-    }
-
     public function listBoth(ListRelevantContratationsRequest $request): JsonResponse
     {
         return $this->respond($request, KeywordMatchMode::Both);

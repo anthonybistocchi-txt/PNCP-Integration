@@ -82,7 +82,7 @@ class ListRelevantContratationsAction
     ): bool {
         return match ($mode) {
             KeywordMatchMode::Include => $includeKeywords === [],
-            KeywordMatchMode::Exclude => $excludeKeywords === [],
+            KeywordMatchMode::Exclude => $excludeKeywords === [], // mantido para completude do enum
             KeywordMatchMode::Both    => $includeKeywords === [] || $excludeKeywords === [],
         };
     }

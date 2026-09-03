@@ -35,9 +35,8 @@ Route::middleware('auth.api')->group(function () {
         });
     
         Route::prefix('contracts')->group(function () {
-            Route::get('/relevant/include', [ListRelevantContratationsController::class, 'listInclude'])->middleware('throttle:60,1');
-            Route::get('/relevant/exclude', [ListRelevantContratationsController::class, 'listExclude'])->middleware('throttle:60,1');
-            Route::get('/relevant/both', [ListRelevantContratationsController::class, 'listBoth'])->middleware('throttle:60,1');
+        Route::get('/relevant/include', [ListRelevantContratationsController::class, 'listInclude'])->middleware('throttle:60,1');
+        Route::get('/relevant/both', [ListRelevantContratationsController::class, 'listBoth'])->middleware('throttle:60,1');
             Route::match(['QUERY'], '/', [ListPublicContratationsController::class, 'list'])->middleware('throttle:60,1');
         });
         
