@@ -49,7 +49,7 @@ services:
 
   worker:
     <<: *php-app
-    command: php -d memory_limit=512M artisan queue:work redis --sleep=3 --tries=5 --timeout=600 --memory=512 --max-jobs=50 --max-time=3600
+    command: php -d memory_limit=512M artisan queue:work redis --sleep=3 --tries=5 --timeout=900 --memory=512 --max-jobs=50 --max-time=3600
     stop_grace_period: 60s
     depends_on:
       postgres:
@@ -74,9 +74,15 @@ services:
       POSTGRES_DB: manipulate_data
       POSTGRES_USER: root
       POSTGRES_PASSWORD: rootpassword
+    # O tuning fica no compose base (e não no overlay de produção) para valer
+    # tanto em `docker compose up` quanto com o -f docker-compose.prod.yml.
+    command: postgres -c config_file=/etc/postgresql/postgresql.conf
     volumes:
       - db-data:/var/lib/postgresql/data
-    shm_size: 256mb
+      - ./.docker/postgres/postgresql.conf:/etc/postgresql/postgresql.conf:ro
+    # /dev/shm é onde os workers paralelos trocam dados. Com 4 workers por
+    # query, os 256mb anteriores viravam teto de paralelismo.
+    shm_size: 2gb
     networks:
       - app-network
     restart: unless-stopped

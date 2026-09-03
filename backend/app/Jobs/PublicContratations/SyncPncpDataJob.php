@@ -2,21 +2,19 @@
 
 namespace App\Jobs\PublicContratations;
 
-use App\Actions\PublicContratations\SyncPublicContratationAction;
 use App\DTOs\PublicContratations\ListPublicContratationsDTO;
+use App\Integrations\PNCP\PncpCircuitBreaker;
 use App\Integrations\PNCP\PncpClient;
+use App\Integrations\PNCP\PncpSyncCycleTracker;
+use App\Support\ErrorHandling\PncpFailureHandler;
+use DateTimeInterface;
 use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Http\Client\RequestException;
-use App\Jobs\PublicContratations\ProcessPncpPageJob;
-use App\Integrations\PNCP\PncpCircuitBreaker;
-use App\Integrations\PNCP\PncpSyncCycleTracker;
-use App\Support\ErrorHandling\JobExceptionPolicy;
 use Illuminate\Support\Str;
 
 class SyncPncpDataJob implements ShouldQueue, ShouldBeUnique
@@ -24,13 +22,14 @@ class SyncPncpDataJob implements ShouldQueue, ShouldBeUnique
     // Dá 5 minutos (300 segundos) de tolerância antes de matar o Job
     public $timeout = 300;
 
-    // Se a API do governo cair, ele tenta rodar esse job até 5 vezes
-    public $tries = 5;
-
-    // Atrasos para retentativas naturais de falha
+    // Atrasos para retentativas de falhas que não são da API do PNCP
+    // (deadlock de banco, por exemplo). Falha de API não passa por aqui:
+    // vira release com a pausa que o circuit breaker determinar.
     public $backoff = [120, 300, 600];
 
-    public int $uniqueFor = 5400; // 1 hora e meia de lock para evitar duplicidade
+    // Precisa cobrir a janela do retryUntil, senão o lock de unicidade expira
+    // enquanto o job ainda está esperando o circuit breaker.
+    public int $uniqueFor = 21600; // 6 horas
 
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
@@ -55,22 +54,34 @@ class SyncPncpDataJob implements ShouldQueue, ShouldBeUnique
     }
 
     /**
+     * Limite por tempo em vez de por tentativas.
+     *
+     * release() incrementa o contador de tentativas no Laravel, então um job
+     * que apenas espera o circuit breaker morreria de MaxAttemptsExceeded sem
+     * ter falhado por conta própria. Com retryUntil definido o $tries deixa de
+     * valer e quem manda é o relógio.
+     */
+    public function retryUntil(): DateTimeInterface
+    {
+        return now()->addHours((int) config('pncp.retry_until_hours', 6));
+    }
+
+    /**
      * Execute the job.
      */
-    public function handle(PncpClient $client, PncpCircuitBreaker $circuitBreaker, JobExceptionPolicy $jobExceptionPolicy, PncpSyncCycleTracker $cycleTracker): void
-    {
+    public function handle(
+        PncpClient $client,
+        PncpCircuitBreaker $circuitBreaker,
+        PncpFailureHandler $failureHandler,
+        PncpSyncCycleTracker $cycleTracker
+    ): void {
         Log::withContext([
             'job_id' => $this->job ? $this->job->getJobId() : 'master',
         ]);
-        
+
         $startedAt = now();
 
-        // 1. Verificação global do Circuit Breaker antes de qualquer requisição
-        if ($circuitBreaker->isOpen()) 
-        {
-            $remainingSeconds = $circuitBreaker->remainingSeconds();
-            Log::info("Circuit Breaker ativo. Devolvendo Job Mestre para a fila com atraso de {$remainingSeconds}s.");
-            $this->release($remainingSeconds);
+        if ($failureHandler->shouldWait($this, 'Job Mestre')) {
             return;
         }
 
@@ -89,15 +100,18 @@ class SyncPncpDataJob implements ShouldQueue, ShouldBeUnique
             'tamanhoPagina'               => $tamanhoPagina,
         ]);
 
-        try 
-        {
+        try {
             $response = $client->getContratacoes($queryParams);
 
-            if (!$response || empty($response->data)) 
-            {
+            // A API respondeu: qualquer pausa em curso pode ser encerrada.
+            $circuitBreaker->recordSuccess();
+
+            if (! $response || empty($response->data)) {
                 Log::info('SyncPncpDataJob (MASTER) finished. No records found to sync.');
+
                 return;
             }
+
             $totalPaginas = $response->totalPaginas ?? 1;
             Log::info("PNCP API reports {$response->totalRegistros} total records across {$totalPaginas} pages.");
 
@@ -129,21 +143,8 @@ class SyncPncpDataJob implements ShouldQueue, ShouldBeUnique
                 'started_at'             => $startedAt->toIso8601String(),
                 'dto'                    => (array) $this->dto,
             ]);
-            
-        } 
-        catch (\Throwable $error)
-        {
-            if ($error instanceof RequestException && $error->response->status() === 429) 
-            {
-                $pauseMinutes = max(1, (int) config('pncp.circuit_breaker_minutes', 2));
-                $circuitBreaker->trip($pauseMinutes);
-                
-                Log::warning("Erro 429 (Too Many Requests) no PNCP! Ativando Circuit Breaker por {$pauseMinutes} minutos. Job Mestre adiado.");
-                $this->release($pauseMinutes * 60);
-                return;
-            }
-            
-            $jobExceptionPolicy->handle($error, $this, [
+        } catch (\Throwable $error) {
+            $failureHandler->handle($error, $this, [
                 'action'  => 'SyncPncpDataJob',
                 'attempt' => $this->attempts(),
                 'dto'     => (array) $this->dto,
@@ -151,4 +152,3 @@ class SyncPncpDataJob implements ShouldQueue, ShouldBeUnique
         }
     }
 }
-

@@ -4,30 +4,30 @@ namespace App\Jobs\PublicContratations;
 
 use App\Actions\PublicContratations\SyncPublicContratationAction;
 use App\DTOs\PublicContratations\ListPublicContratationsDTO;
+use App\Integrations\PNCP\PncpCircuitBreaker;
 use App\Integrations\PNCP\PncpClient;
+use App\Integrations\PNCP\PncpSyncCycleTracker;
+use App\Support\ErrorHandling\PncpFailureHandler;
+use Carbon\Carbon;
+use DateTimeInterface;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Http\Client\RequestException;
-use App\Integrations\PNCP\PncpCircuitBreaker;
-use App\Integrations\PNCP\PncpSyncCycleTracker;
-use App\Support\ErrorHandling\JobExceptionPolicy;
-use Carbon\Carbon;
 
 class ProcessPncpPageJob implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    public $timeout = 600;
+    // No pior caso são 51 requisições por página passando pelo limitador de
+    // taxa global. Na prática a espera é sub-segundo, mas o teto precisa de
+    // folga. Manter REDIS_QUEUE_RETRY_AFTER acima deste valor.
+    public $timeout = 900;
 
-    // Se a API do governo cair, ele tenta rodar esse job até 5 vezes
-    public $tries = 5;
-
-    // Se o Job falhar (ex: Too Many Requests), ele não tenta de novo na mesma hora.
-    // O Job vai esperar 2 minutos na 1ª falha, 5 minutos na 2ª, 10 minutos na 3ª, 20 minutos na 4ª e 40 minutos na 5ª.
+    // Atrasos para falhas que não são da API do PNCP (deadlock de banco, por
+    // exemplo). Falha de API vira release com a pausa do circuit breaker.
     public $backoff = [120, 300, 600, 1200, 2400];
 
     /**
@@ -42,28 +42,32 @@ class ProcessPncpPageJob implements ShouldQueue
     ) {}
 
     /**
+     * Limite por tempo em vez de por tentativas: release() incrementa o
+     * contador de tentativas, então esperar o circuit breaker algumas vezes
+     * mataria o job por MaxAttemptsExceeded sem ele ter falhado.
+     */
+    public function retryUntil(): DateTimeInterface
+    {
+        return now()->addHours((int) config('pncp.retry_until_hours', 6));
+    }
+
+    /**
      * Execute the job.
      */
     public function handle(
         PncpClient $client,
         SyncPublicContratationAction $syncAction,
         PncpCircuitBreaker $circuitBreaker,
-        JobExceptionPolicy $jobExceptionPolicy,
+        PncpFailureHandler $failureHandler,
         PncpSyncCycleTracker $cycleTracker
-    ): void
-    {
+    ): void {
         Log::withContext([
             'sync_id' => $this->syncId,
             'job_id'  => $this->job ? $this->job->getJobId() : 'sync',
-            'page'    => $this->pagina
+            'page'    => $this->pagina,
         ]);
 
-        // 1. Verificação global do Circuit Breaker antes de qualquer requisição
-        if ($circuitBreaker->isOpen())
-        {
-            $remainingSeconds = $circuitBreaker->remainingSeconds();
-            Log::info("Circuit Breaker ativo. Devolvendo Job da página {$this->pagina} para a fila com atraso de {$remainingSeconds}s.");
-            $this->release($remainingSeconds);
+        if ($failureHandler->shouldWait($this, "Job da página {$this->pagina}")) {
             return;
         }
 
@@ -79,35 +83,33 @@ class ProcessPncpPageJob implements ShouldQueue
             'tamanhoPagina'               => $this->tamanhoPagina,
         ]);
 
-        try 
-        {
+        try {
             $response = $client->getContratacoes($queryParams);
 
-            if (!$response || empty($response->data)) 
-            {
+            // A API respondeu: qualquer pausa em curso pode ser encerrada.
+            $circuitBreaker->recordSuccess();
+
+            if (! $response || empty($response->data)) {
                 Log::info("ProcessPncpPageJob finished. No data on page {$this->pagina}.");
                 $this->markCyclePageDone($cycleTracker);
+
                 return;
             }
 
             // Para cada item da página, vamos buscar os documentos (editais, anexos) associados
-            foreach ($response->data as $item) 
-            {
+            foreach ($response->data as $item) {
                 $cnpj       = $item->orgaoEntidade->cnpj ?? null;
                 $ano        = $item->anoCompra ?? null;
                 $sequencial = $item->sequencialCompra ?? null;
 
-                if ($cnpj && $ano && $sequencial) 
-                {
+                if ($cnpj && $ano && $sequencial) {
                     $item->documentos = $client->getArquivos($cnpj, $ano, $sequencial);
 
-                    $delayMs = max(0, (int) config('pncp.document_delay_ms', 80));
+                    $delayMs = max(0, (int) config('pncp.document_delay_ms', 0));
                     if ($delayMs > 0) {
                         usleep($delayMs * 1000);
                     }
-                } 
-                else 
-                {
+                } else {
                     $item->documentos = [];
                 }
             }
@@ -115,31 +117,22 @@ class ProcessPncpPageJob implements ShouldQueue
             // Passa o array completo para a Action fazer o Bulk Upsert
             $syncAction->handle($response->data);
 
-            Log::info("ProcessPncpPageJob finished. Processed " . count($response->data) . " items on page {$this->pagina}.");
+            Log::info('ProcessPncpPageJob finished. Processed ' . count($response->data) . " items on page {$this->pagina}.");
             $this->markCyclePageDone($cycleTracker);
-            
-        } 
-        catch (\Throwable $error)
-        {
-            if ($error instanceof RequestException && $error->response->status() === 429) 
-            {
-                $pauseMinutes = max(1, (int) config('pncp.circuit_breaker_minutes', 2));
-                $circuitBreaker->trip($pauseMinutes);
-                
-                Log::warning("Erro 429 (Too Many Requests) no PNCP! Ativando Circuit Breaker por {$pauseMinutes} minutos. Job da página {$this->pagina} adiado.");
-                $this->release($pauseMinutes * 60);
+        } catch (\Throwable $error) {
+            // Reagendado (API indisponível ou em pausa): a página ainda vai
+            // rodar, então o contador do ciclo não pode avançar.
+            if ($failureHandler->handle($error, $this, [
+                'action'    => 'ProcessPncpPageJob',
+                'page'      => $this->pagina,
+                'page_size' => $this->tamanhoPagina,
+                'attempt'   => $this->attempts(),
+                'dto'       => (array) $this->dto,
+            ])) {
                 return;
             }
-            
-            $jobExceptionPolicy->handle($error, $this, [
-                'action'     => 'ProcessPncpPageJob',
-                'page'       => $this->pagina,
-                'page_size'  => $this->tamanhoPagina,
-                'attempt'    => $this->attempts(),
-                'dto'        => (array) $this->dto,
-            ]);
 
-            // handle() só retorna aqui quando a falha é permanente/crítica (não haverá retry).
+            // Só chega aqui quando a falha é permanente/crítica (não haverá retry).
             $this->markCyclePageDone($cycleTracker);
         }
     }
@@ -164,11 +157,10 @@ class ProcessPncpPageJob implements ShouldQueue
             'modalidade'       => $this->dto->codigoModalidadeContratacao,
             'pages_completed'  => $pagesCompleted,
             'duration_minutes' => $startedAt ? $startedAt->diffInMinutes($finishedAt) : null,
-            'started_at'      => $this->cycleStartedAt ?: null,
-            'finished_at'     => $finishedAt->toIso8601String(),
-            'dto'             => (array) $this->dto,
-            'message'         => "Todos os {$pagesCompleted} jobs do ciclo foram finalizados.",
+            'started_at'       => $this->cycleStartedAt ?: null,
+            'finished_at'      => $finishedAt->toIso8601String(),
+            'dto'              => (array) $this->dto,
+            'message'          => "Todos os {$pagesCompleted} jobs do ciclo foram finalizados.",
         ]);
     }
 }
-
