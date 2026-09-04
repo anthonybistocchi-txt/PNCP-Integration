@@ -44,6 +44,7 @@ class SyncPublicContratationAction
                 [
                     'orgao_cnpj',
                     'ano_compra',
+                    'sequencial_compra',
                     'data_publicacao_pncp',
                     'data_atualizacao_global',
                     'uf',
@@ -81,6 +82,7 @@ class SyncPublicContratationAction
             'numero_controle_pncp'          => $data->numeroControlePNCP,
             'orgao_cnpj'                    => $data->orgaoEntidade->cnpj ?? null,
             'ano_compra'                    => $data->anoCompra ?? null,
+            'sequencial_compra'             => $data->sequencialCompra ?? null,
             'situacao_compra_id'            => $data->situacaoCompraId ?? null,
             'valor_total_estimado'          => isset($data->valorTotalEstimado) ? (int) round($data->valorTotalEstimado * 100) : null,
             'data_abertura_proposta'        => !empty($data->dataAberturaProposta) ? date('Y-m-d H:i:s', strtotime($data->dataAberturaProposta)) : null,
@@ -92,10 +94,13 @@ class SyncPublicContratationAction
             'data_encerramento_proposta'    => !empty($data->dataEncerramentoProposta) ? date('Y-m-d H:i:s', strtotime($data->dataEncerramentoProposta)) : null,
             'srp'                           => $data->srp ?? false,
             'objeto_compra'                 => $data->objetoCompra ?? null,
-            // No upsert em massa, arrays não passam pelo mutator cast automático de todos os drivers, 
+            // No upsert em massa, arrays não passam pelo mutator cast automático de todos os drivers,
             // então garantimos o json_encode aqui.
             'payload_completo'              => json_encode($data),
-            'documentos'                    => json_encode($data->documentos ?? []),
+            // Fase 1 não busca documentos. A coluna é deixada vazia para que a
+            // Fase 2 (SyncPncpDocumentsJob) saiba quais registros processar
+            // (documents_fetched_at IS NULL).
+            'documentos'                    => json_encode([]),
         ];
     }
 }

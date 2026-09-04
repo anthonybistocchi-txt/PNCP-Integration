@@ -21,10 +21,9 @@ class ProcessPncpPageJob implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    // No pior caso são 51 requisições por página passando pelo limitador de
-    // taxa global. Na prática a espera é sub-segundo, mas o teto precisa de
-    // folga. Manter REDIS_QUEUE_RETRY_AFTER acima deste valor.
-    public $timeout = 900;
+    // Fase 1 faz apenas 1 requisição HTTP por execução (listagem da página).
+    // 120 segundos cobre o timeout máximo de 40s + overhead de fila + DB.
+    public $timeout = 120;
 
     // Atrasos para falhas que não são da API do PNCP (deadlock de banco, por
     // exemplo). Falha de API vira release com a pausa do circuit breaker.
@@ -96,25 +95,9 @@ class ProcessPncpPageJob implements ShouldQueue
                 return;
             }
 
-            // Para cada item da página, vamos buscar os documentos (editais, anexos) associados
-            foreach ($response->data as $item) {
-                $cnpj       = $item->orgaoEntidade->cnpj ?? null;
-                $ano        = $item->anoCompra ?? null;
-                $sequencial = $item->sequencialCompra ?? null;
-
-                if ($cnpj && $ano && $sequencial) {
-                    $item->documentos = $client->getArquivos($cnpj, $ano, $sequencial);
-
-                    $delayMs = max(0, (int) config('pncp.document_delay_ms', 0));
-                    if ($delayMs > 0) {
-                        usleep($delayMs * 1000);
-                    }
-                } else {
-                    $item->documentos = [];
-                }
-            }
-
-            // Passa o array completo para a Action fazer o Bulk Upsert
+            // Fase 1: persiste os dados da licitação com documentos = [].
+            // A Fase 2 (SyncPncpDocumentsJob) preencherá os documentos de forma
+            // desacoplada, após o ciclo completo de todas as páginas.
             $syncAction->handle($response->data);
 
             Log::info('ProcessPncpPageJob finished. Processed ' . count($response->data) . " items on page {$this->pagina}.");
@@ -138,7 +121,8 @@ class ProcessPncpPageJob implements ShouldQueue
     }
 
     /**
-     * Incrementa o contador do ciclo. A última página emite SYNC_CYCLE_FINISHED.
+     * Incrementa o contador do ciclo. A última página emite SYNC_CYCLE_FINISHED
+     * e dispara automaticamente a Fase 2 (SyncPncpDocumentsJob).
      * Release (circuit breaker) e retry transiente não devem chamar este método.
      */
     private function markCyclePageDone(PncpSyncCycleTracker $cycleTracker): void
@@ -161,6 +145,17 @@ class ProcessPncpPageJob implements ShouldQueue
             'finished_at'      => $finishedAt->toIso8601String(),
             'dto'              => (array) $this->dto,
             'message'          => "Todos os {$pagesCompleted} jobs do ciclo foram finalizados.",
+        ]);
+
+        // Dispara a Fase 2: busca os documentos de todas as licitações
+        // sincronizadas neste ciclo. O job mestre filtra por documents_fetched_at
+        // IS NULL dentro do intervalo de datas, garantindo idempotência.
+        SyncPncpDocumentsJob::dispatch($this->dto, $this->cycleStartedAt);
+
+        Log::info('DOCUMENTS_PHASE_DISPATCHED', [
+            'sync_id'    => $this->syncId,
+            'modalidade' => $this->dto->codigoModalidadeContratacao,
+            'message'    => 'SyncPncpDocumentsJob enfileirado para a Fase 2.',
         ]);
     }
 }
