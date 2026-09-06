@@ -69,11 +69,13 @@ services:
   postgres:
     image: postgres:15-alpine
     ports:
-      - "5432:5432"
+      # Só escuta em 127.0.0.1 do host: não é alcançável pela internet.
+      # Acesso externo (DBeaver etc.) via túnel SSH — ver instruções no chat.
+      - "127.0.0.1:5432:5432"
     environment:
       POSTGRES_DB: manipulate_data
       POSTGRES_USER: root
-      POSTGRES_PASSWORD: rootpassword
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD precisa estar definida no .env da raiz do projeto (ao lado do docker-compose.yml)}
     # O tuning fica no compose base (e não no overlay de produção) para valer
     # tanto em `docker compose up` quanto com o -f docker-compose.prod.yml.
     command: postgres -c config_file=/etc/postgresql/postgresql.conf
@@ -97,8 +99,9 @@ services:
   redis:
     image: redis:alpine
     ports:
-      - "6379:6379"
-    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy noeviction
+      # Só escuta em 127.0.0.1 do host: não é alcançável pela internet.
+      - "127.0.0.1:6379:6379"
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy noeviction --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD precisa estar definida no .env da raiz do projeto (ao lado do docker-compose.yml)}
     volumes:
       - redis-data:/data
     networks:
@@ -106,10 +109,12 @@ services:
     restart: unless-stopped
     logging: *default-logging
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" --no-auth-warning ping"]
       interval: 10s
       timeout: 3s
       retries: 5
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD precisa estar definida no .env da raiz do projeto (ao lado do docker-compose.yml)}
 
 networks:
   app-network:

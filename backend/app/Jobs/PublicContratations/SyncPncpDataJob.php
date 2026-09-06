@@ -85,7 +85,11 @@ class SyncPncpDataJob implements ShouldQueue, ShouldBeUnique
             return;
         }
 
-        Log::info('SyncPncpDataJob (MASTER) started for parameters', (array) $this->dto);
+        Log::info('SyncPncpDataJob (MASTER) started.', [
+            'modalidade'  => $this->dto->codigoModalidadeContratacao,
+            'dataInicial' => $this->dto->dataInicial,
+            'dataFinal'   => $this->dto->dataFinal,
+        ]);
 
         $tamanhoPagina = 50; // Máximo aceito da api do PNCP
 
@@ -138,16 +142,19 @@ class SyncPncpDataJob implements ShouldQueue, ShouldBeUnique
             Log::info('SYNC_PAGES_DISPATCHED', [
                 'sync_id'                => $syncId,
                 'modalidade'             => $this->dto->codigoModalidadeContratacao,
+                'dataInicial'            => $this->dto->dataInicial,
+                'dataFinal'              => $this->dto->dataFinal,
                 'total_pages_dispatched' => $totalPaginas,
                 'total_records_reported' => $response->totalRegistros,
                 'started_at'             => $startedAt->toIso8601String(),
-                'dto'                    => (array) $this->dto,
             ]);
         } catch (\Throwable $error) {
             $failureHandler->handle($error, $this, PncpCircuitBreaker::SCOPE_LISTAGEM, [
-                'action'  => 'SyncPncpDataJob',
-                'attempt' => $this->attempts(),
-                'dto'     => (array) $this->dto,
+                'action'      => 'SyncPncpDataJob',
+                'attempt'     => $this->attempts(),
+                'modalidade'  => $this->dto->codigoModalidadeContratacao,
+                'dataInicial' => $this->dto->dataInicial,
+                'dataFinal'   => $this->dto->dataFinal,
             ]);
         }
     }

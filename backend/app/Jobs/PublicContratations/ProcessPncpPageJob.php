@@ -108,11 +108,11 @@ class ProcessPncpPageJob implements ShouldQueue
             // Reagendado (API indisponível ou em pausa): a página ainda vai
             // rodar, então o contador do ciclo não pode avançar.
             if ($failureHandler->handle($error, $this, PncpCircuitBreaker::SCOPE_LISTAGEM, [
-                'action'    => 'ProcessPncpPageJob',
-                'page'      => $this->pagina,
-                'page_size' => $this->tamanhoPagina,
-                'attempt'   => $this->attempts(),
-                'dto'       => (array) $this->dto,
+                'action'      => 'ProcessPncpPageJob',
+                'page'        => $this->pagina,
+                'page_size'   => $this->tamanhoPagina,
+                'attempt'     => $this->attempts(),
+                'modalidade'  => $this->dto->codigoModalidadeContratacao,
             ])) {
                 return;
             }
@@ -145,11 +145,12 @@ class ProcessPncpPageJob implements ShouldQueue
         Log::info('SYNC_CYCLE_FINISHED', [
             'sync_id'          => $this->syncId,
             'modalidade'       => $this->dto->codigoModalidadeContratacao,
+            'dataInicial'      => $this->dto->dataInicial,
+            'dataFinal'        => $this->dto->dataFinal,
             'pages_completed'  => $pagesCompleted,
             'duration_minutes' => $startedAt ? $startedAt->diffInMinutes($finishedAt) : null,
             'started_at'       => $this->cycleStartedAt ?: null,
             'finished_at'      => $finishedAt->toIso8601String(),
-            'dto'              => (array) $this->dto,
             'message'          => "Todos os {$pagesCompleted} jobs do ciclo foram finalizados.",
         ]);
 

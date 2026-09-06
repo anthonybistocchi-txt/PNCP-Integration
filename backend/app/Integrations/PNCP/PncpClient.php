@@ -72,24 +72,30 @@ class PncpClient
     }
 
     /**
-     * Executa a requisição respeitando o teto global de requisições por
-     * segundo. O limite é compartilhado entre todos os workers e cobre os dois
-     * endpoints, porque o WAF do PNCP dispara por pico e a busca de anexos
-     * (50 chamadas por página) é a maior parte do tráfego.
+     * Executa a requisição respeitando um intervalo mínimo entre chamadas ao
+     * PNCP. O limite é compartilhado entre todos os workers e cobre os dois
+     * endpoints (listagem e documentos), porque o WAF do PNCP demonstrou
+     * disparar por rajada — mesmo poucas requisições por segundo, se
+     * concentradas, já produziram 429/5xx em produção (05 e 06/09).
+     *
+     * Por isso este limitador é "1 vaga por janela de N segundos"
+     * (`allow(1)->every($minInterval)`), e não "N vagas por segundo": a
+     * segunda forma permite rajadas de N requisições quase simultâneas no
+     * início de cada janela, que é exatamente o padrão que tem disparado o
+     * circuit breaker.
      */
     private function request(string $url, array $query, int $timeout): Response
     {
-        $maxPerSecond = (int) config('pncp.throttle.max_per_second');
+        $minInterval = (int) config('pncp.throttle.min_interval_seconds');
 
-        if ($maxPerSecond <= 0) {
+        if ($minInterval <= 0) {
             return $this->send($url, $query, $timeout);
         }
 
         return Redis::throttle('pncp:global')
-            ->allow($maxPerSecond)
-            ->every(1)
+            ->allow(1)
+            ->every($minInterval)
             ->block((int) config('pncp.throttle.block_seconds'))
-            ->sleep(200)
             ->then(
                 fn () => $this->send($url, $query, $timeout),
                 fn () => throw new PncpUnavailableException(

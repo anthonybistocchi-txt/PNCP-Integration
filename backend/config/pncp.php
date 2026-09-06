@@ -67,17 +67,19 @@ return [
     | Limitador de taxa global
     |--------------------------------------------------------------------------
     |
-    | Teto de requisições por segundo somando todos os workers e os dois
-    | endpoints (listagem e documentos). O WAF do PNCP dispara por pico, e a
-    | busca de anexos é ~98% do tráfego: 50 chamadas por página.
+    | Intervalo mínimo entre requisições, somando todos os workers e os dois
+    | endpoints (listagem e documentos): só 1 requisição é admitida por janela
+    | de N segundos, sem rajada. Em 05/09 e 06/09, mesmo com poucas
+    | requisições por segundo (ex.: 8 em 14s), o WAF do PNCP disparou 429 —
+    | o gatilho parece ser a concentração, não só o volume total.
     |
-    | Se aparecer 429 mesmo assim, baixar para 4. Se ficar limpo e quisermos
-    | mais velocidade, subir para 8.
+    | Se ainda aparecer 429 com isso, subir o intervalo (ex.: 3 ou 4). Se
+    | ficar limpo por alguns dias e quisermos mais velocidade, baixar para 1.
     |
     */
     'throttle' => [
-        'max_per_second' => (int) env('PNCP_MAX_REQUESTS_PER_SECOND', 6),
-        'block_seconds'  => (int) env('PNCP_THROTTLE_BLOCK_SECONDS', 10),
+        'min_interval_seconds' => (int) env('PNCP_MIN_INTERVAL_SECONDS', 2),
+        'block_seconds'        => (int) env('PNCP_THROTTLE_BLOCK_SECONDS', 30),
     ],
 
     /*
