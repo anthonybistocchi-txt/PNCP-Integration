@@ -16,6 +16,20 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Escalonamento entre modalidades na Fase 2 (documentos)
+    |--------------------------------------------------------------------------
+    |
+    | Minutos de espera adicionados por posição na fila do dia. Sem isso,
+    | modalidades que terminam a listagem quase juntas (o caso comum, já que
+    | todas são disparadas no mesmo horário) despacham SyncPncpDocumentsJob
+    | quase juntas, gerando um pico concentrado de chamadas a /arquivos — foi
+    | isso que, em 05/09, colocou o circuit breaker em nível máximo por ~6h.
+    |
+    */
+    'documents_stagger_minutes' => (int) env('PNCP_DOCUMENTS_STAGGER_MINUTES', 8),
+
+    /*
+    |--------------------------------------------------------------------------
     | Pausa entre documentos
     |--------------------------------------------------------------------------
     |
@@ -84,6 +98,14 @@ return [
         'server_error_backoff'   => [1, 3, 10, 20],
         'rate_limit_backoff'     => [2, 5, 10, 20],
         'probe_lock_seconds'     => (int) env('PNCP_BREAKER_PROBE_SECONDS', 120),
+
+        // Válvula de escape: em 05/09 o breaker ficou preso no nível máximo
+        // (20 min) por ~6h porque cada sondagem falha renovava o TTL do nível.
+        // A partir deste tanto de sondagens falhas seguidas no nível máximo,
+        // a pausa passa a ser esta (bem maior), reduzindo ruído/carga durante
+        // uma degradação real e sinalizando o incidente com Log::critical.
+        'prolonged_outage_threshold'      => (int) env('PNCP_BREAKER_PROLONGED_OUTAGE_THRESHOLD', 3),
+        'prolonged_outage_backoff_minutes'=> (int) env('PNCP_BREAKER_PROLONGED_OUTAGE_BACKOFF_MINUTES', 60),
     ],
 
     /*

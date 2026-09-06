@@ -29,12 +29,12 @@ class PncpFailureHandler
      *
      * @return bool true quando o job foi devolvido para a fila e deve retornar.
      */
-    public function shouldWait(object $job, string $label): bool
+    public function shouldWait(object $job, string $label, string $scope): bool
     {
-        if ($this->breaker->isOpen()) {
-            $delay = $this->breaker->remainingSeconds() + $this->jitter('resume');
+        if ($this->breaker->isOpen($scope)) {
+            $delay = $this->breaker->remainingSeconds($scope) + $this->jitter('resume');
 
-            Log::info("Circuit Breaker ativo. {$label} devolvido para a fila com atraso de {$delay}s.");
+            Log::info("Circuit Breaker ativo ({$scope}). {$label} devolvido para a fila com atraso de {$delay}s.");
             $job->release($delay);
 
             return true;
@@ -42,10 +42,10 @@ class PncpFailureHandler
 
         // Pausa vencida: apenas um job sonda a API. Se outro já pegou o lock,
         // este espera o resultado em vez de repetir a enxurrada.
-        if ($this->breaker->isHalfOpen() && ! $this->breaker->acquireProbe()) {
+        if ($this->breaker->isHalfOpen($scope) && ! $this->breaker->acquireProbe($scope)) {
             $delay = $this->jitter('contend');
 
-            Log::info("Outro job está sondando o PNCP. {$label} adiado em {$delay}s.");
+            Log::info("Outro job está sondando o PNCP ({$scope}). {$label} adiado em {$delay}s.");
             $job->release($delay);
 
             return true;
@@ -57,33 +57,35 @@ class PncpFailureHandler
     /**
      * @return bool true quando o job foi devolvido para a fila e deve retornar.
      */
-    public function handle(Throwable $error, object $job, array $context = []): bool
+    public function handle(Throwable $error, object $job, string $scope, array $context = []): bool
     {
         if ($error instanceof PncpRateLimitedException) {
-            $this->breaker->recordRateLimit($error->retryAfter);
+            $this->breaker->recordRateLimit($scope, $error->retryAfter);
 
             Log::warning('PNCP_RATE_LIMITED', array_merge($context, [
+                'scope'            => $scope,
                 'retry_after'      => $error->retryAfter,
-                'breaker_open_for' => $this->breaker->remainingSeconds(),
+                'breaker_open_for' => $this->breaker->remainingSeconds($scope),
             ]));
 
-            $job->release($this->resumeDelay());
+            $job->release($this->resumeDelay($scope));
 
             return true;
         }
 
         if ($error instanceof PncpUnavailableException || $error instanceof ConnectionException) {
-            $opened = $this->breaker->recordServerFailure();
+            $opened = $this->breaker->recordServerFailure($scope);
 
             Log::warning('PNCP_UPSTREAM_UNAVAILABLE', array_merge($context, [
+                'scope'                => $scope,
                 'exception'            => get_class($error),
                 'message'              => $error->getMessage(),
                 'breaker_opened'       => $opened,
-                'breaker_open_for'     => $this->breaker->remainingSeconds(),
-                'consecutive_failures' => $this->breaker->consecutiveFailures(),
+                'breaker_open_for'     => $this->breaker->remainingSeconds($scope),
+                'consecutive_failures' => $this->breaker->consecutiveFailures($scope),
             ]));
 
-            $job->release($this->resumeDelay());
+            $job->release($this->resumeDelay($scope));
 
             return true;
         }
@@ -97,10 +99,10 @@ class PncpFailureHandler
      * Com o breaker aberto, espera a pausa inteira. Sem ele (falha isolada
      * abaixo do limiar), espera pouco e tenta de novo.
      */
-    private function resumeDelay(): int
+    private function resumeDelay(string $scope): int
     {
-        return $this->breaker->isOpen()
-            ? $this->breaker->remainingSeconds() + $this->jitter('resume')
+        return $this->breaker->isOpen($scope)
+            ? $this->breaker->remainingSeconds($scope) + $this->jitter('resume')
             : $this->jitter('contend');
     }
 

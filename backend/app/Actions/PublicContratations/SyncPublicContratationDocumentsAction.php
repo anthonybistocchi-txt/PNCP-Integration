@@ -3,6 +3,7 @@
 namespace App\Actions\PublicContratations;
 
 use App\Models\PublicContratations\PublicContratation;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class SyncPublicContratationDocumentsAction
@@ -26,7 +27,7 @@ class SyncPublicContratationDocumentsAction
         }
 
         try {
-            \Illuminate\Support\Facades\DB::transaction(function () use ($items) {
+            DB::transaction(function () use ($items) {
                 foreach ($items as $item) {
                     PublicContratation::where('numero_controle_pncp', $item['numero_controle_pncp'])
                         ->update([

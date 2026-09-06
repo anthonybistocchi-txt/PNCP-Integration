@@ -81,7 +81,7 @@ class SyncPncpDataJob implements ShouldQueue, ShouldBeUnique
 
         $startedAt = now();
 
-        if ($failureHandler->shouldWait($this, 'Job Mestre')) {
+        if ($failureHandler->shouldWait($this, 'Job Mestre', PncpCircuitBreaker::SCOPE_LISTAGEM)) {
             return;
         }
 
@@ -104,7 +104,7 @@ class SyncPncpDataJob implements ShouldQueue, ShouldBeUnique
             $response = $client->getContratacoes($queryParams);
 
             // A API respondeu: qualquer pausa em curso pode ser encerrada.
-            $circuitBreaker->recordSuccess();
+            $circuitBreaker->recordSuccess(PncpCircuitBreaker::SCOPE_LISTAGEM);
 
             if (! $response || empty($response->data)) {
                 Log::info('SyncPncpDataJob (MASTER) finished. No records found to sync.');
@@ -144,7 +144,7 @@ class SyncPncpDataJob implements ShouldQueue, ShouldBeUnique
                 'dto'                    => (array) $this->dto,
             ]);
         } catch (\Throwable $error) {
-            $failureHandler->handle($error, $this, [
+            $failureHandler->handle($error, $this, PncpCircuitBreaker::SCOPE_LISTAGEM, [
                 'action'  => 'SyncPncpDataJob',
                 'attempt' => $this->attempts(),
                 'dto'     => (array) $this->dto,

@@ -126,4 +126,21 @@ class SyncPncpDocumentsJob implements ShouldQueue, ShouldBeUnique
             'started_at'      => $startedAt->toIso8601String(),
         ]);
     }
+
+    /**
+     * Chamado pelo Laravel quando o job é descartado permanentemente (ex.:
+     * retryUntil expirou). Sem isso, o abandono da Fase 2 de uma modalidade
+     * some no log genérico de MaxAttemptsExceeded, sem contexto nenhum.
+     */
+    public function failed(\Throwable $exception): void
+    {
+        Log::error('PNCP_DOCUMENTS_PHASE_ABANDONED', [
+            'modalidade'  => $this->dto->codigoModalidadeContratacao,
+            'dataInicial' => $this->dto->dataInicial,
+            'dataFinal'   => $this->dto->dataFinal,
+            'exception'   => get_class($exception),
+            'message'     => $exception->getMessage(),
+            'reason'      => 'Job Mestre da Fase 2 esgotou o retryUntil antes de conseguir descobrir/despachar os lotes pendentes. Os registros continuam com documents_fetched_at nulo e serão retentados no próximo ciclo diário.',
+        ]);
+    }
 }

@@ -6,6 +6,7 @@ use App\Actions\PublicContratations\SyncPublicContratationAction;
 use App\DTOs\PublicContratations\ListPublicContratationsDTO;
 use App\Integrations\PNCP\PncpCircuitBreaker;
 use App\Integrations\PNCP\PncpClient;
+use App\Integrations\PNCP\PncpDocumentsDispatchSequencer;
 use App\Integrations\PNCP\PncpSyncCycleTracker;
 use App\Support\ErrorHandling\PncpFailureHandler;
 use Carbon\Carbon;
@@ -58,7 +59,8 @@ class ProcessPncpPageJob implements ShouldQueue
         SyncPublicContratationAction $syncAction,
         PncpCircuitBreaker $circuitBreaker,
         PncpFailureHandler $failureHandler,
-        PncpSyncCycleTracker $cycleTracker
+        PncpSyncCycleTracker $cycleTracker,
+        PncpDocumentsDispatchSequencer $documentsSequencer
     ): void {
         Log::withContext([
             'sync_id' => $this->syncId,
@@ -66,7 +68,7 @@ class ProcessPncpPageJob implements ShouldQueue
             'page'    => $this->pagina,
         ]);
 
-        if ($failureHandler->shouldWait($this, "Job da página {$this->pagina}")) {
+        if ($failureHandler->shouldWait($this, "Job da página {$this->pagina}", PncpCircuitBreaker::SCOPE_LISTAGEM)) {
             return;
         }
 
@@ -86,11 +88,11 @@ class ProcessPncpPageJob implements ShouldQueue
             $response = $client->getContratacoes($queryParams);
 
             // A API respondeu: qualquer pausa em curso pode ser encerrada.
-            $circuitBreaker->recordSuccess();
+            $circuitBreaker->recordSuccess(PncpCircuitBreaker::SCOPE_LISTAGEM);
 
             if (! $response || empty($response->data)) {
                 Log::info("ProcessPncpPageJob finished. No data on page {$this->pagina}.");
-                $this->markCyclePageDone($cycleTracker);
+                $this->markCyclePageDone($cycleTracker, $documentsSequencer);
 
                 return;
             }
@@ -101,11 +103,11 @@ class ProcessPncpPageJob implements ShouldQueue
             $syncAction->handle($response->data);
 
             Log::info('ProcessPncpPageJob finished. Processed ' . count($response->data) . " items on page {$this->pagina}.");
-            $this->markCyclePageDone($cycleTracker);
+            $this->markCyclePageDone($cycleTracker, $documentsSequencer);
         } catch (\Throwable $error) {
             // Reagendado (API indisponível ou em pausa): a página ainda vai
             // rodar, então o contador do ciclo não pode avançar.
-            if ($failureHandler->handle($error, $this, [
+            if ($failureHandler->handle($error, $this, PncpCircuitBreaker::SCOPE_LISTAGEM, [
                 'action'    => 'ProcessPncpPageJob',
                 'page'      => $this->pagina,
                 'page_size' => $this->tamanhoPagina,
@@ -116,17 +118,21 @@ class ProcessPncpPageJob implements ShouldQueue
             }
 
             // Só chega aqui quando a falha é permanente/crítica (não haverá retry).
-            $this->markCyclePageDone($cycleTracker);
+            $this->markCyclePageDone($cycleTracker, $documentsSequencer);
         }
     }
 
     /**
      * Incrementa o contador do ciclo. A última página emite SYNC_CYCLE_FINISHED
-     * e dispara automaticamente a Fase 2 (SyncPncpDocumentsJob).
+     * e dispara automaticamente a Fase 2 (SyncPncpDocumentsJob), com um delay
+     * escalonado para não empilhar o início da Fase 2 de várias modalidades
+     * que terminam a listagem quase juntas.
      * Release (circuit breaker) e retry transiente não devem chamar este método.
      */
-    private function markCyclePageDone(PncpSyncCycleTracker $cycleTracker): void
-    {
+    private function markCyclePageDone(
+        PncpSyncCycleTracker $cycleTracker,
+        PncpDocumentsDispatchSequencer $documentsSequencer
+    ): void {
         $pagesCompleted = $cycleTracker->markPageDone($this->syncId);
 
         if ($pagesCompleted === null) {
@@ -150,12 +156,19 @@ class ProcessPncpPageJob implements ShouldQueue
         // Dispara a Fase 2: busca os documentos de todas as licitações
         // sincronizadas neste ciclo. O job mestre filtra por documents_fetched_at
         // IS NULL dentro do intervalo de datas, garantindo idempotência.
-        SyncPncpDocumentsJob::dispatch($this->dto, $this->cycleStartedAt);
+        //
+        // O delay escalonado evita que modalidades que terminam a listagem
+        // quase juntas (o caso comum) bombardeiem /arquivos ao mesmo tempo.
+        $delayMinutes = $documentsSequencer->nextDelayMinutes();
+
+        SyncPncpDocumentsJob::dispatch($this->dto, $this->cycleStartedAt)
+            ->delay(now()->addMinutes($delayMinutes));
 
         Log::info('DOCUMENTS_PHASE_DISPATCHED', [
-            'sync_id'    => $this->syncId,
-            'modalidade' => $this->dto->codigoModalidadeContratacao,
-            'message'    => 'SyncPncpDocumentsJob enfileirado para a Fase 2.',
+            'sync_id'      => $this->syncId,
+            'modalidade'   => $this->dto->codigoModalidadeContratacao,
+            'delay_minutes'=> $delayMinutes,
+            'message'      => 'SyncPncpDocumentsJob enfileirado para a Fase 2.',
         ]);
     }
 }

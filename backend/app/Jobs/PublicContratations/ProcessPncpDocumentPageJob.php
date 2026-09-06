@@ -81,7 +81,7 @@ class ProcessPncpDocumentPageJob implements ShouldQueue
             'lote_size'  => count($this->items),
         ]);
 
-        if ($failureHandler->shouldWait($this, 'Job de Documentos')) {
+        if ($failureHandler->shouldWait($this, 'Job de Documentos', PncpCircuitBreaker::SCOPE_DOCUMENTOS)) {
             return;
         }
 
@@ -101,7 +101,7 @@ class ProcessPncpDocumentPageJob implements ShouldQueue
 
                 // Registra sucesso parcial para manter o circuit breaker atualizado.
                 // Em caso de falha abaixo do limiar, o breaker não abre ainda.
-                $circuitBreaker->recordSuccess();
+                $circuitBreaker->recordSuccess(PncpCircuitBreaker::SCOPE_DOCUMENTOS);
 
                 $upsertData[] = [
                     'numero_controle_pncp' => $item['numero_controle_pncp'],
@@ -123,7 +123,7 @@ class ProcessPncpDocumentPageJob implements ShouldQueue
         } catch (\Throwable $error) {
             // Reagendado (API indisponível ou em pausa): o lote ainda vai rodar,
             // então o contador do ciclo de documentos não pode avançar.
-            if ($failureHandler->handle($error, $this, [
+            if ($failureHandler->handle($error, $this, PncpCircuitBreaker::SCOPE_DOCUMENTOS, [
                 'action'    => 'ProcessPncpDocumentPageJob',
                 'lote_size' => count($this->items),
                 'attempt'   => $this->attempts(),
@@ -160,6 +160,24 @@ class ProcessPncpDocumentPageJob implements ShouldQueue
             'started_at'       => $this->cycleStartedAt ?: null,
             'finished_at'      => $finishedAt->toIso8601String(),
             'message'          => "Todos os {$pagesCompleted} lotes de documentos foram finalizados.",
+        ]);
+    }
+
+    /**
+     * Chamado pelo Laravel quando o job é descartado permanentemente (ex.:
+     * retryUntil expirou durante uma degradação prolongada do PNCP). Sem
+     * isso, o abandono de um lote de documentos some no log genérico de
+     * MaxAttemptsExceeded, sem contexto de modalidade/lote nenhum.
+     */
+    public function failed(\Throwable $exception): void
+    {
+        Log::error('PNCP_DOCUMENTS_PHASE_ABANDONED', [
+            'sync_id'    => $this->syncId,
+            'modalidade' => $this->modalidade,
+            'lote_size'  => count($this->items),
+            'exception'  => get_class($exception),
+            'message'    => $exception->getMessage(),
+            'reason'     => 'Lote de documentos esgotou o retryUntil sem conseguir buscar os arquivos. Os registros continuam com documents_fetched_at nulo e serão retentados no próximo ciclo diário.',
         ]);
     }
 }
