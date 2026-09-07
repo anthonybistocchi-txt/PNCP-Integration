@@ -39,8 +39,21 @@ class PncpCircuitBreaker
     /** Janela em que falhas ainda contam como "consecutivas". */
     private const FAILURE_WINDOW_MINUTES = 10;
 
-    /** Por quanto tempo lembramos do degrau de escalonamento. */
-    private const LEVEL_MEMORY_MINUTES = 60;
+    /**
+     * Por quanto tempo lembramos do degrau de escalonamento.
+     *
+     * Precisa ser bem maior que a maior pausa que o próprio breaker pode
+     * abrir (hoje: 60min do degrau máximo normal, ou o
+     * prolonged_outage_backoff_minutes, também 60min por padrão). Em 06/09
+     * os dois valores eram iguais (60min): a memória do nível expirava quase
+     * no mesmo instante em que a pausa terminava, então a primeira falha
+     * após cada pausa longa via isHalfOpen()=false e reiniciava a escala do
+     * zero (falhas_consecutivas, 60s) em vez de tratar como sondagem_falhou
+     * e voltar direto para a pausa longa — foi esse reinício repetido a
+     * cada ~75min que consumiu as 6h de retryUntil sem nenhuma pausa
+     * realmente longa se sustentar.
+     */
+    private const LEVEL_MEMORY_MINUTES = 180;
 
     public function isOpen(string $scope): bool
     {
