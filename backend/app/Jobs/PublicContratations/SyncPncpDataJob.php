@@ -85,12 +85,6 @@ class SyncPncpDataJob implements ShouldQueue, ShouldBeUnique
             return;
         }
 
-        Log::info('SyncPncpDataJob (MASTER) started.', [
-            'modalidade'  => $this->dto->codigoModalidadeContratacao,
-            'dataInicial' => $this->dto->dataInicial,
-            'dataFinal'   => $this->dto->dataFinal,
-        ]);
-
         $tamanhoPagina = 50; // Máximo aceito da api do PNCP
 
         // Faz apenas UMA requisição para a primeira página para descobrir o Total de Páginas
@@ -111,17 +105,33 @@ class SyncPncpDataJob implements ShouldQueue, ShouldBeUnique
             $circuitBreaker->recordSuccess(PncpCircuitBreaker::SCOPE_LISTAGEM);
 
             if (! $response || empty($response->data)) {
-                Log::info('SyncPncpDataJob (MASTER) finished. No records found to sync.');
+                Log::info('PNCP_LISTAGEM_FINISHED', [
+                    'modalidade'       => $this->dto->codigoModalidadeContratacao,
+                    'dataInicial'      => $this->dto->dataInicial,
+                    'dataFinal'        => $this->dto->dataFinal,
+                    'status'           => 'empty',
+                    'total_records'    => 0,
+                    'duration_seconds' => $startedAt->diffInSeconds(now()),
+                ]);
 
                 return;
             }
 
-            $totalPaginas = $response->totalPaginas ?? 1;
-            Log::info("PNCP API reports {$response->totalRegistros} total records across {$totalPaginas} pages.");
+            $totalPaginas  = (int) ($response->totalPaginas ?? 1);
+            $totalRecords  = (int) ($response->totalRegistros ?? 0);
+            $syncId        = (string) Str::uuid();
 
-            $syncId = (string) Str::uuid();
+            $cycleTracker->start($syncId, $totalPaginas, $totalRecords);
 
-            $cycleTracker->start($syncId, $totalPaginas);
+            Log::info('PNCP_LISTAGEM_STARTED', [
+                'sync_id'       => $syncId,
+                'modalidade'    => $this->dto->codigoModalidadeContratacao,
+                'dataInicial'   => $this->dto->dataInicial,
+                'dataFinal'     => $this->dto->dataFinal,
+                'total_records' => $totalRecords,
+                'total_pages'   => $totalPaginas,
+                'started_at'    => $startedAt->toIso8601String(),
+            ]);
 
             $staggerSeconds = max(0, (int) config('pncp.page_stagger_seconds', 0));
 
@@ -138,16 +148,6 @@ class SyncPncpDataJob implements ShouldQueue, ShouldBeUnique
                     $job->delay(now()->addSeconds(($pagina - 1) * $staggerSeconds));
                 }
             }
-
-            Log::info('SYNC_PAGES_DISPATCHED', [
-                'sync_id'                => $syncId,
-                'modalidade'             => $this->dto->codigoModalidadeContratacao,
-                'dataInicial'            => $this->dto->dataInicial,
-                'dataFinal'              => $this->dto->dataFinal,
-                'total_pages_dispatched' => $totalPaginas,
-                'total_records_reported' => $response->totalRegistros,
-                'started_at'             => $startedAt->toIso8601String(),
-            ]);
         } catch (\Throwable $error) {
             $failureHandler->handle($error, $this, PncpCircuitBreaker::SCOPE_LISTAGEM, [
                 'action'      => 'SyncPncpDataJob',

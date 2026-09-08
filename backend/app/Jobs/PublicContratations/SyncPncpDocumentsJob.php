@@ -71,12 +71,6 @@ class SyncPncpDocumentsJob implements ShouldQueue, ShouldBeUnique
     {
         $startedAt = now();
 
-        Log::info('SyncPncpDocumentsJob (MASTER) started.', [
-            'modalidade'  => $this->dto->codigoModalidadeContratacao,
-            'dataInicial' => $this->dto->dataInicial,
-            'dataFinal'   => $this->dto->dataFinal,
-        ]);
-
         $dataInicial = Carbon::createFromFormat('Ymd', $this->dto->dataInicial)->startOfDay();
         $dataFinal   = Carbon::createFromFormat('Ymd', $this->dto->dataFinal)->endOfDay();
 
@@ -96,8 +90,14 @@ class SyncPncpDocumentsJob implements ShouldQueue, ShouldBeUnique
             ->toArray();
 
         if (empty($records)) {
-            Log::info('SyncPncpDocumentsJob (MASTER) finished. No records pending document sync.', [
-                'modalidade' => $this->dto->codigoModalidadeContratacao,
+            Log::info('PNCP_DOCUMENTOS_FINISHED', [
+                'source'           => 'fase2',
+                'modalidade'       => $this->dto->codigoModalidadeContratacao,
+                'dataInicial'      => $this->dto->dataInicial,
+                'dataFinal'        => $this->dto->dataFinal,
+                'status'           => 'empty',
+                'total_records'    => 0,
+                'duration_seconds' => $startedAt->diffInSeconds(now()),
             ]);
 
             return;
@@ -105,9 +105,21 @@ class SyncPncpDocumentsJob implements ShouldQueue, ShouldBeUnique
 
         $lotes       = array_chunk($records, 50);
         $totalLotes  = count($lotes);
+        $totalRecords = count($records);
         $syncId      = (string) Str::uuid();
 
-        $cycleTracker->start($syncId, $totalLotes);
+        $cycleTracker->start($syncId, $totalLotes, $totalRecords);
+
+        Log::info('PNCP_DOCUMENTOS_STARTED', [
+            'sync_id'       => $syncId,
+            'source'        => 'fase2',
+            'modalidade'    => $this->dto->codigoModalidadeContratacao,
+            'dataInicial'   => $this->dto->dataInicial,
+            'dataFinal'     => $this->dto->dataFinal,
+            'total_records' => $totalRecords,
+            'total_lotes'   => $totalLotes,
+            'started_at'    => $startedAt->toIso8601String(),
+        ]);
 
         foreach ($lotes as $lote) {
             ProcessPncpDocumentPageJob::dispatch(
@@ -117,14 +129,6 @@ class SyncPncpDocumentsJob implements ShouldQueue, ShouldBeUnique
                 $startedAt->toIso8601String()
             );
         }
-
-        Log::info('DOCUMENTS_SYNC_DISPATCHED', [
-            'sync_id'         => $syncId,
-            'modalidade'      => $this->dto->codigoModalidadeContratacao,
-            'total_records'   => count($records),
-            'total_lotes'     => $totalLotes,
-            'started_at'      => $startedAt->toIso8601String(),
-        ]);
     }
 
     /**

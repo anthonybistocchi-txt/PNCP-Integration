@@ -85,10 +85,6 @@ class ProcessPncpDocumentPageJob implements ShouldQueue
             return;
         }
 
-        Log::info('ProcessPncpDocumentPageJob started.', [
-            'lote_size' => count($this->items),
-        ]);
-
         $upsertData = [];
 
         try {
@@ -115,11 +111,7 @@ class ProcessPncpDocumentPageJob implements ShouldQueue
             // job inteiro é devolvido para a fila — garantindo atomicidade do lote.
             $syncAction->handle($upsertData);
 
-            Log::info('ProcessPncpDocumentPageJob finished.', [
-                'processed' => count($upsertData),
-            ]);
-
-            $this->markCyclePageDone($cycleTracker);
+            $this->markCyclePageDone($cycleTracker, count($upsertData));
         } catch (\Throwable $error) {
             // Reagendado (API indisponível ou em pausa): o lote ainda vai rodar,
             // então o contador do ciclo de documentos não pode avançar.
@@ -133,33 +125,34 @@ class ProcessPncpDocumentPageJob implements ShouldQueue
             }
 
             // Só chega aqui quando a falha é permanente/crítica (não haverá retry).
-            $this->markCyclePageDone($cycleTracker);
+            $this->markCyclePageDone($cycleTracker, 0);
         }
     }
 
     /**
      * Incrementa o contador do ciclo de documentos.
-     * A última página emite DOCUMENTS_CYCLE_FINISHED.
+     * A última página emite PNCP_DOCUMENTOS_FINISHED.
      */
-    private function markCyclePageDone(PncpSyncCycleTracker $cycleTracker): void
+    private function markCyclePageDone(PncpSyncCycleTracker $cycleTracker, int $itemsProcessed): void
     {
-        $pagesCompleted = $cycleTracker->markPageDone($this->syncId);
+        $summary = $cycleTracker->markPageDone($this->syncId, $itemsProcessed);
 
-        if ($pagesCompleted === null) {
+        if ($summary === null) {
             return;
         }
 
         $finishedAt = now();
         $startedAt  = $this->cycleStartedAt !== '' ? Carbon::parse($this->cycleStartedAt) : null;
 
-        Log::info('DOCUMENTS_CYCLE_FINISHED', [
+        Log::info('PNCP_DOCUMENTOS_FINISHED', [
             'sync_id'          => $this->syncId,
             'modalidade'       => $this->modalidade,
-            'lotes_completed'  => $pagesCompleted,
-            'duration_minutes' => $startedAt ? $startedAt->diffInMinutes($finishedAt) : null,
-            'started_at'       => $this->cycleStartedAt ?: null,
+            'status'           => 'ok',
+            'total_records'    => $summary['total_records'],
+            'items_processed'  => $summary['items_processed'],
+            'lotes_completed'  => $summary['units_completed'],
+            'duration_seconds' => $startedAt ? $startedAt->diffInSeconds($finishedAt) : null,
             'finished_at'      => $finishedAt->toIso8601String(),
-            'message'          => "Todos os {$pagesCompleted} lotes de documentos foram finalizados.",
         ]);
     }
 

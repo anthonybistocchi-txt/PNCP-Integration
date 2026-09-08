@@ -72,10 +72,6 @@ class SyncPncpPendingDocumentsJob implements ShouldQueue, ShouldBeUnique
     {
         $startedAt = now();
 
-        Log::info('SyncPncpPendingDocumentsJob (MASTER) started.', [
-            'modalidade' => $this->modalidade,
-        ]);
-
         // Sem whereBetween: pega qualquer pendência, de qualquer data.
         $records = PublicContratation::select([
                 'numero_controle_pncp',
@@ -90,18 +86,32 @@ class SyncPncpPendingDocumentsJob implements ShouldQueue, ShouldBeUnique
             ->toArray();
 
         if (empty($records)) {
-            Log::info('SyncPncpPendingDocumentsJob (MASTER) finished. No records pending document sync.', [
-                'modalidade' => $this->modalidade,
+            Log::info('PNCP_DOCUMENTOS_FINISHED', [
+                'source'           => 'pendentes',
+                'modalidade'       => $this->modalidade,
+                'status'           => 'empty',
+                'total_records'    => 0,
+                'duration_seconds' => $startedAt->diffInSeconds(now()),
             ]);
 
             return;
         }
 
-        $lotes      = array_chunk($records, 50);
-        $totalLotes = count($lotes);
-        $syncId     = (string) Str::uuid();
+        $lotes        = array_chunk($records, 50);
+        $totalLotes   = count($lotes);
+        $totalRecords = count($records);
+        $syncId       = (string) Str::uuid();
 
-        $cycleTracker->start($syncId, $totalLotes);
+        $cycleTracker->start($syncId, $totalLotes, $totalRecords);
+
+        Log::info('PNCP_DOCUMENTOS_STARTED', [
+            'sync_id'       => $syncId,
+            'source'        => 'pendentes',
+            'modalidade'    => $this->modalidade,
+            'total_records' => $totalRecords,
+            'total_lotes'   => $totalLotes,
+            'started_at'    => $startedAt->toIso8601String(),
+        ]);
 
         foreach ($lotes as $lote) {
             ProcessPncpDocumentPageJob::dispatch(
@@ -111,14 +121,6 @@ class SyncPncpPendingDocumentsJob implements ShouldQueue, ShouldBeUnique
                 $startedAt->toIso8601String()
             );
         }
-
-        Log::info('DOCUMENTS_PENDING_SYNC_DISPATCHED', [
-            'sync_id'       => $syncId,
-            'modalidade'    => $this->modalidade,
-            'total_records' => count($records),
-            'total_lotes'   => $totalLotes,
-            'started_at'    => $startedAt->toIso8601String(),
-        ]);
     }
 
     /**

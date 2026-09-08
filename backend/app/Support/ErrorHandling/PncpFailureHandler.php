@@ -33,8 +33,6 @@ class PncpFailureHandler
     {
         if ($this->breaker->isOpen($scope)) {
             $delay = $this->breaker->remainingSeconds($scope) + $this->jitter('resume');
-
-            Log::info("Circuit Breaker ativo ({$scope}). {$label} devolvido para a fila com atraso de {$delay}s.");
             $job->release($delay);
 
             return true;
@@ -44,8 +42,6 @@ class PncpFailureHandler
         // este espera o resultado em vez de repetir a enxurrada.
         if ($this->breaker->isHalfOpen($scope) && ! $this->breaker->acquireProbe($scope)) {
             $delay = $this->jitter('contend');
-
-            Log::info("Outro job está sondando o PNCP ({$scope}). {$label} adiado em {$delay}s.");
             $job->release($delay);
 
             return true;

@@ -36,8 +36,6 @@ class SyncPublicContratationDocumentsAction
                         ]);
                 }
             });
-
-            Log::info('PNCP Documents Sync: Bulk Upserted ' . count($items) . ' document records.');
         } catch (\Throwable $error) {
             Log::error('PNCP_DOCUMENTS_UPSERT_DB_ERROR', [
                 'reason'     => 'Falha ao executar o Bulk Upsert de documentos no banco de dados.',

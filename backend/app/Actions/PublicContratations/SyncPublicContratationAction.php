@@ -60,8 +60,6 @@ class SyncPublicContratationAction
                     'documentos',
                 ]
             );
-
-            Log::info("PNCP Sync: Bulk Upserted " . count($upsertData) . " records.");
         }
         catch (\Throwable $error)
         {

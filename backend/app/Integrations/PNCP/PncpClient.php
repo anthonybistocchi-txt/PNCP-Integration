@@ -9,7 +9,6 @@ use Carbon\Carbon;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Redis;
 
 class PncpClient
@@ -63,8 +62,6 @@ class PncpClient
         }
 
         if ($response->notFound()) {
-            Log::warning("Compra {$cnpj}/{$ano}/{$sequencial} não possui arquivos no PNCP.");
-
             return [];
         }
 
