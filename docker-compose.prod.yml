@@ -1,13 +1,13 @@
 # Servidor: 8 vCPU / 24 GB RAM, dedicado a este projeto.
-# Uso: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --scale worker=2
+# Uso: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 #
 # O tuning do PostgreSQL NÃO fica aqui: está em .docker/postgres/postgresql.conf,
 # montado pelo compose base, para valer mesmo se a subida for sem este overlay.
 # Este arquivo cuida apenas de teto de CPU e memória por container.
 #
 # Orçamento de memória (limites):
-#   postgres 14G | php 2.5G | worker 2×1.5G | redis 1.5G | nginx+scheduler 0.5G
-#   = 21.5G, deixando ~2.5G para o sistema operacional.
+#   postgres 14G | php 2.5G | worker 3×1.5G | redis 1.5G | nginx+scheduler 0.5G
+#   = 23G, deixando ~1G para o sistema operacional.
 #
 # Os tetos de CPU somam mais que 8 de propósito: são limites, não reservas.
 # Assim cada serviço aproveita a capacidade ociosa sem que um sozinho
@@ -32,7 +32,7 @@ services:
         reservations:
           memory: 512M
 
-  worker:
+  worker: &worker-resources
     deploy:
       resources:
         limits:
@@ -40,6 +40,12 @@ services:
           memory: 1536M
         reservations:
           memory: 256M
+
+  worker-2:
+    <<: *worker-resources
+
+  worker-3:
+    <<: *worker-resources
 
   scheduler:
     deploy:

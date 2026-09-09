@@ -17,6 +17,16 @@ x-php-app: &php-app
   restart: unless-stopped
   logging: *default-logging
 
+x-worker: &worker
+  <<: *php-app
+  command: php -d memory_limit=512M artisan queue:work redis --sleep=3 --tries=5 --timeout=900 --memory=512 --max-jobs=50 --max-time=3600
+  stop_grace_period: 60s
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+
 services:
   nginx:
     image: nginx:alpine
@@ -48,14 +58,11 @@ services:
         condition: service_healthy
 
   worker:
-    <<: *php-app
-    command: php -d memory_limit=512M artisan queue:work redis --sleep=3 --tries=5 --timeout=900 --memory=512 --max-jobs=50 --max-time=3600
-    stop_grace_period: 60s
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+    <<: *worker
+  worker-2:
+    <<: *worker
+  worker-3:
+    <<: *worker
 
   scheduler:
     <<: *php-app
