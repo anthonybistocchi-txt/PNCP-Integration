@@ -13,9 +13,10 @@ use App\Http\Controllers\UserKeywords\ListUserKeywordsController;
 use App\Http\Controllers\UserKeywords\DeleteUserKeywordController;
 use Illuminate\Support\Facades\Route;
 
+Route::get('/healthz', [HealthCheckController::class, 'check'])->middleware('throttle:60,1');
+
 Route::middleware('auth.api')->group(function () {
 
-    Route::get('/healthz', [HealthCheckController::class, 'check'])->middleware('throttle:60,1');
     Route::get('/me', [MeController::class, 'me'])->middleware('throttle:60,1');
     Route::post('auth/register', [AuthController::class, 'register'])->middleware('verify_permission_to_create_user', 'throttle:60,1');
 

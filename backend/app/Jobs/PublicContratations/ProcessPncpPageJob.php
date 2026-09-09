@@ -156,7 +156,8 @@ class ProcessPncpPageJob implements ShouldQueue
 
         // Dispara a Fase 2: busca os documentos de todas as licitações
         // sincronizadas neste ciclo. O job mestre filtra por documents_fetched_at
-        // IS NULL dentro do intervalo de datas, garantindo idempotência.
+        // IS NULL entre os registros que este ciclo tocou (updated_at >=
+        // cycleStartedAt), garantindo idempotência.
         //
         // O delay escalonado evita que modalidades que terminam a listagem
         // quase juntas (o caso comum) bombardeiem /arquivos ao mesmo tempo.

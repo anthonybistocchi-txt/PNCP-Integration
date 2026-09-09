@@ -15,26 +15,39 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 /**
- * Job Mestre da varredura de documentos pendentes: busca TODAS as licitações
- * de uma modalidade com `documents_fetched_at IS NULL`, sem nenhum filtro de
- * data.
+ * Job Mestre da varredura de documentos pendentes: busca licitações de uma
+ * modalidade com `documents_fetched_at IS NULL`, sem nenhum filtro de data.
  *
- * Existe porque o SyncPncpDocumentsJob (disparado automaticamente ao fim de
- * cada ciclo de listagem) só olha para o intervalo de datas daquele ciclo
- * (ontem→hoje, no cron diário). Uma licitação publicada no dia X só é
- * candidata a ter os documentos buscados nas execuções dos dias X e X+1 —
- * depois disso, nenhum cron futuro olha para essa data de novo. Se o
- * `/arquivos` do PNCP ficar fora do ar por mais que isso (como em 05–06/09,
- * ~8h contínuas sem uma sondagem bem-sucedida), esses registros ficariam
- * com `documentos: null` para sempre.
+ * É a rede de segurança do SyncPncpDocumentsJob (a Fase 2, disparada ao fim de
+ * cada ciclo de listagem). A Fase 2 cobre apenas os registros que o próprio
+ * ciclo tocou; se o `/arquivos` do PNCP estiver fora do ar naquele momento
+ * (como em 05–06/09, ~8h contínuas sem uma sondagem bem-sucedida), esses
+ * registros ficariam com `documentos: null` para sempre, porque nenhum ciclo
+ * futuro volta a olhar para eles.
  *
- * Este job é disparado por um comando agendado separado (várias vezes ao
- * dia, em horários diferentes do cron principal), garantindo que qualquer
- * pendência eventualmente seja retentada, não importa há quanto tempo foi
- * publicada.
+ * Roda uma vez por dia, em horário próprio, fora do pico do cron principal.
+ * Cada execução leva no máximo MAX_RECORDS_PER_RUN registros por modalidade,
+ * pelos mais recentes primeiro: despachar o passivo inteiro de uma vez só
+ * enfileira lotes que morrem de MaxAttemptsExceeded antes de serem atendidos.
  */
 class SyncPncpPendingDocumentsJob implements ShouldQueue, ShouldBeUnique
 {
+    /**
+     * Teto de registros por execução, por modalidade.
+     *
+     * O retryUntil de cada lote é gravado no payload no momento do dispatch,
+     * então lote que espera mais que essa janela na fila morre de
+     * MaxAttemptsExceeded sem nunca ter falhado por conta própria — foi o que
+     * aconteceu em 09/09, quando 258 lotes despachados às 00:42 morreram todos
+     * às 06:42, 6h depois.
+     *
+     * O limitador global admite 1 requisição a cada 2s (~1.800 documentos/hora),
+     * ou seja ~10.800 documentos cabem numa janela de 6h. Com 10 modalidades,
+     * 1.000 cada mantém a varredura inteira (~10.000) dentro do que a fila
+     * consegue drenar. O que sobra fica para a execução da noite seguinte.
+     */
+    private const MAX_RECORDS_PER_RUN = 1000;
+
     // Dá 5 minutos de tolerância para descobrir os registros e enfileirar os workers.
     public $timeout = 300;
 
@@ -72,7 +85,9 @@ class SyncPncpPendingDocumentsJob implements ShouldQueue, ShouldBeUnique
     {
         $startedAt = now();
 
-        // Sem whereBetween: pega qualquer pendência, de qualquer data.
+        // Sem filtro de data: pega qualquer pendência, de qualquer data — mas
+        // com teto, pelos mais recentes primeiro (o passivo antigo tende a ser
+        // de licitações já encerradas).
         $records = PublicContratation::select([
                 'numero_controle_pncp',
                 'orgao_cnpj',
@@ -82,6 +97,8 @@ class SyncPncpPendingDocumentsJob implements ShouldQueue, ShouldBeUnique
             ->whereNull('documents_fetched_at')
             ->where('codigo_modalidade_contratacao', $this->modalidade)
             ->whereNotNull('sequencial_compra')
+            ->orderByDesc('data_publicacao_pncp')
+            ->limit(self::MAX_RECORDS_PER_RUN)
             ->get()
             ->toArray();
 

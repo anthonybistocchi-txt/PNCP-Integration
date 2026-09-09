@@ -71,11 +71,19 @@ class SyncPncpDocumentsJob implements ShouldQueue, ShouldBeUnique
     {
         $startedAt = now();
 
-        $dataInicial = Carbon::createFromFormat('Ymd', $this->dto->dataInicial)->startOfDay();
-        $dataFinal   = Carbon::createFromFormat('Ymd', $this->dto->dataFinal)->endOfDay();
+        // A listagem consulta /contratacoes/atualizacao, então o ciclo traz
+        // licitações publicadas meses atrás que foram atualizadas ontem.
+        // Recortar por data_publicacao_pncp deixava justamente essas fora da
+        // Fase 2 para sempre: nenhum ciclo futuro olha para a data delas, e só
+        // a varredura de pendentes as alcançava. O upsert da Fase 1 toca
+        // updated_at, então "atualizado desde o início do ciclo" é o recorte
+        // exato do que este ciclo trouxe — e continua limitado ao volume do
+        // dia, sem despachar o passivo histórico inteiro.
+        $touchedSince = $this->cycleStartedAt !== ''
+            ? Carbon::parse($this->cycleStartedAt)
+            : now()->startOfDay();
 
-        // Busca todos os registros sem documentos sincronizados no intervalo,
-        // selecionando apenas as colunas necessárias para a chamada HTTP.
+        // Seleciona apenas as colunas necessárias para a chamada HTTP.
         $records = PublicContratation::select([
                 'numero_controle_pncp',
                 'orgao_cnpj',
@@ -84,7 +92,7 @@ class SyncPncpDocumentsJob implements ShouldQueue, ShouldBeUnique
             ])
             ->whereNull('documents_fetched_at')
             ->where('codigo_modalidade_contratacao', $this->dto->codigoModalidadeContratacao)
-            ->whereBetween('data_publicacao_pncp', [$dataInicial, $dataFinal])
+            ->where('updated_at', '>=', $touchedSince)
             ->whereNotNull('sequencial_compra')
             ->get()
             ->toArray();

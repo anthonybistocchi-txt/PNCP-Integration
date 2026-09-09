@@ -1,92 +1,164 @@
 # PNCP Integration - Backend
 
-Este é o backend da aplicação **PNCP Integration**, responsável por fornecer uma API de alta performance para consulta de licitações e contratos públicos, com sincronização assíncrona da API do Portal Nacional de Contratações Públicas (PNCP).
+Backend da aplicação **PNCP Integration**: API de consulta de licitações e contratos públicos, com sincronização assíncrona da API do Portal Nacional de Contratações Públicas (PNCP).
 
-## 🏛️ Arquitetura
+## Arquitetura
 
-O sistema é dividido em dois fluxos isolados que não interferem um no outro:
+Dois fluxos isolados:
 
-### 1. Fluxo de Leitura (Síncrono/Frontend)
-Focado em latência ultrabaixa (< 20ms). 
-- O frontend consome os dados do nosso banco de dados PostgreSQL, que atua como a única **Fonte de Verdade**.
-- **Segurança**: As rotas são protegidas por um middleware de autenticação (`auth.api`) que exige o Header `API_KEY`.
-- **Validação**: Dados chegam na rota, passam pelo `GetPublicContratationsRequest`, e são convertidos rigorosamente em um `DTO`.
-- O `Service` delega para o `Repository` que retorna os dados filtrados.
-- **Importante:** A leitura **NUNCA** faz requisições externas para o Governo, garantindo que o usuário não sofra com lentidão ou timeouts.
+### 1. Fluxo de Leitura (síncrono / frontend)
 
-### 2. Fluxo de Sincronização (Assíncrono/Background)
-Focado em alto volume de ingestão de dados.
-- O `Scheduler` (Cron) aciona o comando `pncp:sync` diariamente de madrugada.
-- O Command despacha um Job Mestre: `SyncPncpDataJob`.
-- **Padrão Fan-Out**: O Mestre consulta a API do PNCP apenas para descobrir o total de páginas existentes. Em seguida, ele cria e enfileira um operário (`ProcessPncpPageJob`) para *cada página* existente.
-- **Tolerância a Falhas e Logs**: O sistema captura erros e "Poisoned Jobs" silenciosamente. Se a rede oscilar, o Laravel tenta novamente (até 5 vezes). Erros de Timeout, Rate Limiting (429) e Falhas Fatais geram Logs Estruturados em JSON para facilitar a depuração via DataDog/Elasticsearch sem poluir o log com Stack Traces gigantes.
-- **Circuit Breaker**: Integrado com Redis, o sistema detecta erros `429 Too Many Requests` (Rate Limit da API do Governo) e imediatamente "abre o disjuntor", devolvendo os Jobs para a fila com uma pausa inteligente de 5 minutos.
-- **Bulk Upsert**: O operário baixa páginas de 50 licitações do Governo e envia para a `SyncPublicContratationAction`. A Action executa um `PublicContratation::upsert()` no Postgres de forma massiva.
+Focado em latência baixa.
 
----
+- O frontend lê apenas o PostgreSQL local (fonte de verdade).
+- Rotas autenticadas usam o middleware `auth.api` (header `API_KEY` ou Bearer token do usuário).
+- Validação via FormRequest (`ListPublicContratationsRequest`), conversão para DTO, Service e Repository.
+- A leitura **nunca** chama a API do governo.
 
-## 🛠️ Tecnologias e Stack
-- **PHP 8.2+**
-- **Laravel 11**
-- **PostgreSQL** (Armazenamento Relacional)
-- **Redis** (Cache em memória de altíssima velocidade para Rate Limiting)
-- **Docker & Docker Compose** (Containerização Completa)
-- **Padrões**: DTOs (Data Transfer Objects), FormRequests, Services, Repositories, Resources, Fan-Out Jobs.
+### 2. Fluxo de Sincronização (assíncrono / background)
 
----
+Focado em ingestão em volume.
 
-## 🚀 Como Rodar o Projeto
+#### Fase 1 — Listagem
 
-### 1. Subindo os Containers
-O projeto possui um ambiente conteinerizado pronto para uso:
+1. O scheduler dispara `pncp:sync` diariamente às **04:30**.
+2. O comando enfileira um `SyncPncpDataJob` por modalidade (1–10 por padrão).
+3. O mestre consulta o PNCP só para descobrir o total de páginas e faz fan-out de `ProcessPncpPageJob` (50 itens por página).
+4. Cada operário faz upsert em massa via `SyncPublicContratationAction`.
+
+#### Fase 2 — Documentos (automática)
+
+Ao terminar a listagem de uma modalidade, o sistema dispara `SyncPncpDocumentsJob`, que busca arquivos (`/arquivos`) dos registros que o ciclo tocou (`documents_fetched_at IS NULL` e `updated_at >= início do ciclo`) e distribui lotes em `ProcessPncpDocumentPageJob`.
+
+#### Varredura de pendentes (rede de segurança)
+
+`pncp:sync-documentos-pendentes` às **09:00** e **21:00** reprocessa registros com `documents_fetched_at` nulo de qualquer data (teto por modalidade, mais recentes primeiro). Cobre o que a Fase 2 não conseguiu quando o PNCP estava instável.
+
+#### Resiliência
+
+- **Retry por tempo**: jobs usam `retryUntil` (~6h via `PNCP_RETRY_UNTIL_HOURS`), não um contador fixo de 5 tentativas.
+- **Throttle global**: intervalo mínimo entre requisições ao PNCP (`PNCP_MIN_INTERVAL_SECONDS`), compartilhado por todos os workers.
+- **Circuit breaker** (Redis): pausa escalonada em 429 e em falhas consecutivas 5xx/timeout; escopos separados para listagem e documentos.
+- **Logs estruturados**: eventos nomeados (`PNCP_LISTAGEM_*`, `PNCP_DOCUMENTOS_*`, `PNCP_BREAKER_*`, etc.) em `storage/logs/laravel.log`. Progresso da fila também aparece no stdout dos containers (`docker compose logs worker`).
+
+## Stack
+
+- PHP 8.3+
+- Laravel 13
+- PostgreSQL
+- Redis (fila, cache, circuit breaker, unique jobs)
+- Docker Compose (nginx, php-fpm, postgres, redis, scheduler, 3 workers)
+
+## Como rodar
+
+Os arquivos de compose ficam na **raiz do monorepo** (`../` a partir desta pasta), não dentro de `backend/`.
+
+### 1. Variáveis de ambiente
+
+Copie e preencha:
+
+- `.env` na raiz do projeto (senhas do Postgres/Redis usadas pelo compose)
+- `backend/.env` (app Laravel; `DB_PASSWORD` e `REDIS_PASSWORD` devem bater com a raiz)
+
+### 2. Subir os containers
+
 ```bash
-docker-compose up -d
+cd ..   # raiz do projeto (ao lado de docker-compose.yml)
+docker compose up -d
 ```
-Isso iniciará:
-- Container do PHP-FPM / Nginx (Backend Laravel)
-- Container do PostgreSQL (Banco de Dados)
-- Container do Redis (Cache/Circuit Breaker)
 
-### 2. Configurando o Banco de Dados
-Gere a estrutura inicial e o seu Usuário Admin (com a `API_KEY` definida no seu `.env`) executando:
+Sobe: nginx (porta 8000), php, postgres, redis, scheduler e **3 workers** (`worker`, `worker-2`, `worker-3`).
+
+Produção (limites de CPU/RAM):
+
 ```bash
-docker-compose exec php php artisan migrate --seed
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 ```
 
-### 3. Rodando o Worker da Fila
-Para que a sincronização assíncrona funcione, o worker deve estar rodando em background:
+### 3. Migrar e seedar
+
 ```bash
-docker-compose exec php php artisan queue:work
+docker compose exec php php artisan migrate --seed
 ```
-*(Para produção, utilize ferramentas como o Supervisor para manter o Worker de pé).*
 
-### 4. Alimentando o Banco de Dados Manualmente
+Cria o usuário admin (API key no banco; ver seeder).
+
+### 4. Sync manual (opcional)
+
 ```bash
-docker-compose exec php php artisan pncp:sync
+# Listagem (ontem→hoje, modalidades 1–10)
+docker compose exec php php artisan pncp:sync
+
+# Só algumas modalidades / janela maior
+docker compose exec php php artisan pncp:sync --days=30 --modalidades=6,8
+
+# Varredura de documentos pendentes
+docker compose exec php php artisan pncp:sync-documentos-pendentes
 ```
-*(Obs: O sincronizador Mestre atual foi configurado para focar inicialmente e varrer apenas a Modalidade 6 - Pregão).*
 
----
+Não é necessário subir `queue:work` à mão: os workers já sobem com o compose.
 
-## 📚 Endpoints da API
+### Agendamento
 
-### `GET /api/healthz`
-Endpoint público para verificação de saúde da aplicação (Health Check). Retorna o status de conexão com o Banco de Dados e com o Redis. Ideal para uso com Docker Healthcheck ou serviços de monitoramento.
+| Horário | Comando | Função |
+|--------|---------|--------|
+| 04:30 | `pncp:sync` | Listagem diária + disparo automático da Fase 2 |
+| 09:00 | `pncp:sync-documentos-pendentes` | Drena passivo de documentos |
+| 21:00 | `pncp:sync-documentos-pendentes` | Segunda chance no dia |
 
-### `QUERY /api/contracts`
-Endpoint projetado para suportar buscas complexas enviando o payload via `body` ao invés de sobrecarregar a URL. Utiliza o método HTTP `QUERY`.
+## Endpoints da API
 
-**Headers Requeridos:**
-- `API_KEY`: *(Chave de Acesso configurada no `.env`)*
-- `Accept`: `application/json`
+Base: `http://localhost:8000/api`
 
-**Body Params (JSON):**
+### Público
+
+#### `GET /api/healthz`
+
+Health check (sem autenticação). Retorna status de banco e Redis.
+
+### Autenticados
+
+Header: `API_KEY: <chave do usuário>` (ou `Authorization: Bearer <chave>`) e `Accept: application/json`.
+
+#### `GET /api/me`
+
+Dados do usuário autenticado.
+
+#### `POST /api/auth/register`
+
+Criação de usuário (exige permissão no middleware `verify_permission_to_create_user`).
+
+#### Keywords — `/api/v1/keywords`
+
+| Método | Rota | Descrição |
+|--------|------|-----------|
+| GET | `/` | Lista keywords do usuário |
+| POST | `/` | Cria/atualiza |
+| PUT | `/{id}` | Atualiza |
+| DELETE | `/{id}` | Remove |
+
+#### Filters — `/api/v1/filters`
+
+| Método | Rota | Descrição |
+|--------|------|-----------|
+| GET | `/` | Lista filtros do usuário |
+| POST | `/` | Cria/atualiza |
+| DELETE | `/{id}` | Remove |
+
+#### Contracts — `/api/v1/contracts`
+
+##### `QUERY /api/v1/contracts`
+
+Busca com filtros no body (método HTTP `QUERY`).
+
+**Body (JSON):**
+
 ```json
 {
   "dataInicial": "20260101",
   "dataFinal": "20260815",
   "codigoModalidadeContratacao": 6,
-  "tipoData": "publicacao", 
+  "tipoData": "publicacao",
   "uf": "SP",
   "codigoMunicipioIbge": 3543402,
   "limit": 15,
@@ -99,17 +171,19 @@ Endpoint projetado para suportar buscas complexas enviando o payload via `body` 
   "fontesOrcamentarias": 2
 }
 ```
-*(Obs: `dataInicial`, `dataFinal` e `codigoModalidadeContratacao` são obrigatórios. O limite máximo permitido para o `limit` é de 50 registros por requisição. A API utiliza **Keyset Pagination (Cursor)** para alta performance).*
 
-**Exemplo de Resposta (JSON):**
-A API implementa paginação por cursor (Keyset Pagination) no escopo global para lidar com grandes volumes de dados de forma escalável:
+- Obrigatórios: `dataInicial`, `dataFinal`, `codigoModalidadeContratacao`
+- `limit` máximo: 50
+- Paginação por cursor (keyset)
+
+**Resposta (exemplo):**
+
 ```json
 {
   "data": [
     {
       "numeroControle": "12345/2026",
-      "processo": "0001/2026",
-      ...
+      "processo": "0001/2026"
     }
   ],
   "count_page": 15,
@@ -117,67 +191,75 @@ A API implementa paginação por cursor (Keyset Pagination) no escopo global par
   "has_more": true
 }
 ```
-*Para buscar a próxima página, envie o valor de `next_cursor` no parâmetro `cursor` do payload. A navegação chega ao fim quando `has_more` for `false` ou `next_cursor` for `null`.*
 
-**Sobre o parâmetro `tipoData`:**
-- `"publicacao"` (Padrão): A busca pelas datas informadas será baseada na data original de publicação do edital.
-- `"atualizacao"`: A busca pelas datas informadas olhará para as licitações que **sofreram alterações** no PNCP nesse intervalo (ex: um edital de janeiro que foi atualizado hoje).
+Envie `next_cursor` em `cursor` na próxima página. Fim quando `has_more` for `false` ou `next_cursor` for `null`.
 
----
+**`tipoData`:**
 
-## 🗂️ Tabelas de Domínio (Dicionário de Dados PNCP)
+- `publicacao` (padrão): filtra pela data de publicação do edital
+- `atualizacao`: filtra por licitações que sofreram alteração no intervalo
 
-Para facilitar a construção dos filtros no JSON, abaixo estão os principais domínios mapeados da API do PNCP para consulta:
+##### `GET /api/v1/contracts/relevant/include`
+
+Contratações relevantes ao usuário (modo include), com `cursor` e `limit` opcionais.
+
+##### `GET /api/v1/contracts/relevant/both`
+
+Idem, modo both (include + exclude).
+
+## Tabelas de domínio (PNCP)
 
 ### `poderId`
-Identifica a qual poder da república a entidade pertence.
-* `E`: Executivo
-* `L`: Legislativo 
-* `J`: Judiciário 
-* `N`: Não se aplica *(geralmente prefeituras com omissões de cadastro ou natureza atípica)*
+
+- `E`: Executivo
+- `L`: Legislativo
+- `J`: Judiciário
+- `N`: Não se aplica
 
 ### `esferaId`
-Esfera governamental.
-* `F`: Federal
-* `E`: Estadual
-* `M`: Municipal
-* `D`: Distrital (Distrito Federal)
-* `N`: Não se aplica
+
+- `F`: Federal
+- `E`: Estadual
+- `M`: Municipal
+- `D`: Distrital (DF)
+- `N`: Não se aplica
 
 ### `situacaoCompraId`
-Status atual do processo da contratação.
-* `1`: Divulgada no PNCP *(ativa/visível)*
-* `2`: Revogada *(cancelada pelo órgão por interesse público)*
-* `3`: Anulada *(cancelada por ilegalidade ou vício jurídico)*
-* `4`: Suspensa *(pausada temporariamente, geralmente por decisão judicial)*
+
+- `1`: Divulgada no PNCP
+- `2`: Revogada
+- `3`: Anulada
+- `4`: Suspensa
 
 ### `modalidadeId` / `codigoModalidadeContratacao`
-A regra sob a qual o processo ocorre.
-* `1`: Leilão
-* `2`: Diálogo Competitivo
-* `3`: Concurso
-* `4`: Concorrência
-* `5`: Concurso (específico) / Chamamento Público
-* `6`: Pregão (Eletrônico ou Presencial)
-* `7`: Dispensa de Licitação
-* `8`: Inexigibilidade
-* `9`: Credenciamento
-* `10`: Pré-qualificação
+
+- `1`: Leilão
+- `2`: Diálogo Competitivo
+- `3`: Concurso
+- `4`: Concorrência
+- `5`: Concurso (específico) / Chamamento Público
+- `6`: Pregão
+- `7`: Dispensa de Licitação
+- `8`: Inexigibilidade
+- `9`: Credenciamento
+- `10`: Pré-qualificação
 
 ### `modoDisputaId`
-* `1`: Aberto *(Licitantes enviam lances públicos e sucessivos)*
-* `2`: Fechado *(Propostas sigilosas e abertas todas de uma vez)*
-* `3`: Aberto e Fechado *(Lances abertos seguidos de oferta final fechada)*
-* `4`: Fechado e Aberto *(Propostas iniciais fechadas, melhores vão para lances abertos)*
-* `5`: Não se aplica *(Contratações diretas como dispensas)*
+
+- `1`: Aberto
+- `2`: Fechado
+- `3`: Aberto e Fechado
+- `4`: Fechado e Aberto
+- `5`: Não se aplica
 
 ### `tipoInstrumentoConvocatorioCodigo`
-Documento oficial que formaliza a abertura.
-* `1`: Edital
-* `2`: Aviso de Contratação Direta (Dispensa/Inexigibilidade)
-* `3`: Ato de Inexigibilidade
-* `4`: Ato de Dispensa
 
-### `fontesOrcamentarias` (Código)
-* `1`: Recursos do Tesouro *(Dinheiro do próprio caixa do ente, como impostos)*
-* `2`: Outras Fontes *(Transferências, convênios, emendas ou fundos setoriais)*
+- `1`: Edital
+- `2`: Aviso de Contratação Direta
+- `3`: Ato de Inexigibilidade
+- `4`: Ato de Dispensa
+
+### `fontesOrcamentarias`
+
+- `1`: Recursos do Tesouro
+- `2`: Outras Fontes
