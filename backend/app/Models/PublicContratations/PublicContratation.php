@@ -19,6 +19,7 @@ class PublicContratation extends Model
         'numero_controle_pncp',
         'orgao_cnpj',
         'ano_compra',
+        'sequencial_compra',
         'data_publicacao_pncp',
         'data_atualizacao_global',
         'uf',
@@ -32,6 +33,7 @@ class PublicContratation extends Model
         'objeto_compra',
         'payload_completo',
         'documentos',
+        'documents_fetched_at',
     ];
 
     // Transforma o JSON do banco de volta para um objeto PHP magicamente
@@ -40,6 +42,7 @@ class PublicContratation extends Model
         'data_atualizacao_global'    => 'datetime',
         'data_abertura_proposta'     => 'datetime',
         'data_encerramento_proposta' => 'datetime',
+        'documents_fetched_at'       => 'datetime',
         'srp'                        => 'boolean',
         'payload_completo'           => 'object', // ou 'array' se preferir trabalhar com arrays assoc
         'documentos'                 => 'array',

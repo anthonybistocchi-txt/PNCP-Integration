@@ -17,6 +17,16 @@ x-php-app: &php-app
   restart: unless-stopped
   logging: *default-logging
 
+x-worker: &worker
+  <<: *php-app
+  command: php -d memory_limit=512M artisan queue:work redis --sleep=3 --tries=5 --timeout=900 --memory=512 --max-jobs=50 --max-time=3600
+  stop_grace_period: 60s
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+
 services:
   nginx:
     image: nginx:alpine
@@ -48,14 +58,11 @@ services:
         condition: service_healthy
 
   worker:
-    <<: *php-app
-    command: php -d memory_limit=512M artisan queue:work redis --sleep=3 --tries=5 --timeout=600 --memory=512 --max-jobs=50 --max-time=3600
-    stop_grace_period: 60s
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+    <<: *worker
+  worker-2:
+    <<: *worker
+  worker-3:
+    <<: *worker
 
   scheduler:
     <<: *php-app
@@ -69,14 +76,22 @@ services:
   postgres:
     image: postgres:15-alpine
     ports:
-      - "5432:5432"
+      # Só escuta em 127.0.0.1 do host: não é alcançável pela internet.
+      # Acesso externo (DBeaver etc.) via túnel SSH — ver instruções no chat.
+      - "127.0.0.1:5432:5432"
     environment:
       POSTGRES_DB: manipulate_data
       POSTGRES_USER: root
-      POSTGRES_PASSWORD: rootpassword
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD precisa estar definida no .env da raiz do projeto (ao lado do docker-compose.yml)}
+    # O tuning fica no compose base (e não no overlay de produção) para valer
+    # tanto em `docker compose up` quanto com o -f docker-compose.prod.yml.
+    command: postgres -c config_file=/etc/postgresql/postgresql.conf
     volumes:
       - db-data:/var/lib/postgresql/data
-    shm_size: 256mb
+      - ./.docker/postgres/postgresql.conf:/etc/postgresql/postgresql.conf:ro
+    # /dev/shm é onde os workers paralelos trocam dados. Com 4 workers por
+    # query, os 256mb anteriores viravam teto de paralelismo.
+    shm_size: 2gb
     networks:
       - app-network
     restart: unless-stopped
@@ -91,8 +106,9 @@ services:
   redis:
     image: redis:alpine
     ports:
-      - "6379:6379"
-    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy noeviction
+      # Só escuta em 127.0.0.1 do host: não é alcançável pela internet.
+      - "127.0.0.1:6379:6379"
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy noeviction --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD precisa estar definida no .env da raiz do projeto (ao lado do docker-compose.yml)}
     volumes:
       - redis-data:/data
     networks:
@@ -100,10 +116,12 @@ services:
     restart: unless-stopped
     logging: *default-logging
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" --no-auth-warning ping"]
       interval: 10s
       timeout: 3s
       retries: 5
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD precisa estar definida no .env da raiz do projeto (ao lado do docker-compose.yml)}
 
 networks:
   app-network:
