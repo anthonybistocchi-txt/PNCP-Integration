@@ -80,7 +80,7 @@ class SyncPublicContratationAction
             'numero_controle_pncp'          => $data->numeroControlePNCP,
             'orgao_cnpj'                    => $data->orgaoEntidade->cnpj ?? null,
             'ano_compra'                    => $data->anoCompra ?? null,
-            'sequencial_compra'             => $data->sequencialCompra ?? null,
+            'sequencial_compra'             => $this->resolveSequencialCompra($data),
             'situacao_compra_id'            => $data->situacaoCompraId ?? null,
             'valor_total_estimado'          => isset($data->valorTotalEstimado) ? (int) round($data->valorTotalEstimado * 100) : null,
             'data_abertura_proposta'        => !empty($data->dataAberturaProposta) ? date('Y-m-d H:i:s', strtotime($data->dataAberturaProposta)) : null,
@@ -100,5 +100,44 @@ class SyncPublicContratationAction
             // (documents_fetched_at IS NULL).
             'documentos'                    => json_encode([]),
         ];
+    }
+
+    /**
+     * O PNCP manda `sequencialCompra` na raiz; em alguns itens só aparece
+     * dentro de `documentos[]` ou embutido em `numeroControlePNCP`
+     * (`{cnpj}-1-{sequencial}/{ano}`). Sem este inteiro a Fase 2 não
+     * consegue chamar /arquivos (`whereNotNull('sequencial_compra')`).
+     */
+    private function resolveSequencialCompra(object $data): ?int
+    {
+        $candidates = [
+            $data->sequencialCompra ?? null,
+            $data->sequencial_compra ?? null,
+        ];
+
+        $documentos = $data->documentos ?? null;
+
+        if (is_array($documentos) && $documentos !== []) {
+            $primeiro = $documentos[0];
+            $candidates[] = is_object($primeiro)
+                ? ($primeiro->sequencialCompra ?? $primeiro->sequencial_compra ?? null)
+                : (is_array($primeiro) ? ($primeiro['sequencialCompra'] ?? $primeiro['sequencial_compra'] ?? null) : null);
+        }
+
+        foreach ($candidates as $candidate) {
+            if ($candidate === null || $candidate === '') {
+                continue;
+            }
+
+            return (int) $candidate;
+        }
+
+        $numeroControle = (string) ($data->numeroControlePNCP ?? '');
+
+        if ($numeroControle !== '' && preg_match('/-(\d+)\/\d{4}$/', $numeroControle, $matches) === 1) {
+            return (int) $matches[1];
+        }
+
+        return null;
     }
 }
