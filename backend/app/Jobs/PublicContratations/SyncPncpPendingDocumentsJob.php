@@ -26,28 +26,14 @@ use Illuminate\Support\Str;
  * futuro volta a olhar para eles.
  *
  * Roda uma vez por dia, em horário próprio, fora do pico do cron principal.
- * Cada execução leva no máximo MAX_RECORDS_PER_RUN registros por modalidade,
- * pelos mais recentes primeiro: despachar o passivo inteiro de uma vez só
- * enfileira lotes que morrem de MaxAttemptsExceeded antes de serem atendidos.
+ * Cada execução leva no máximo `pncp.pending_documents_max_per_run` registros
+ * por modalidade, pelos mais recentes primeiro: despachar o passivo inteiro
+ * de uma vez só enfileira lotes que morrem de MaxAttemptsExceeded antes de
+ * serem atendidos. Ver o comentário em `config/pncp.php` para a conta do
+ * valor escolhido.
  */
 class SyncPncpPendingDocumentsJob implements ShouldQueue, ShouldBeUnique
 {
-    /**
-     * Teto de registros por execução, por modalidade.
-     *
-     * O retryUntil de cada lote é gravado no payload no momento do dispatch,
-     * então lote que espera mais que essa janela na fila morre de
-     * MaxAttemptsExceeded sem nunca ter falhado por conta própria — foi o que
-     * aconteceu em 09/09, quando 258 lotes despachados às 00:42 morreram todos
-     * às 06:42, 6h depois.
-     *
-     * O limitador global admite 1 requisição a cada 2s (~1.800 documentos/hora),
-     * ou seja ~10.800 documentos cabem numa janela de 6h. Com 10 modalidades,
-     * 1.000 cada mantém a varredura inteira (~10.000) dentro do que a fila
-     * consegue drenar. O que sobra fica para a execução da noite seguinte.
-     */
-    private const MAX_RECORDS_PER_RUN = 1000;
-
     // Dá 5 minutos de tolerância para descobrir os registros e enfileirar os workers.
     public $timeout = 300;
 
@@ -98,7 +84,7 @@ class SyncPncpPendingDocumentsJob implements ShouldQueue, ShouldBeUnique
             ->where('codigo_modalidade_contratacao', $this->modalidade)
             ->whereNotNull('sequencial_compra')
             ->orderByDesc('data_publicacao_pncp')
-            ->limit(self::MAX_RECORDS_PER_RUN)
+            ->limit((int) config('pncp.pending_documents_max_per_run', 2000))
             ->get()
             ->toArray();
 

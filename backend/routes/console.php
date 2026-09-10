@@ -22,3 +22,11 @@ Schedule::command('pncp:sync')->dailyAt('04:30');
 // duas chances independentes de pegar o PNCP saudável.
 Schedule::command('pncp:sync-documentos-pendentes')->dailyAt('09:00');
 Schedule::command('pncp:sync-documentos-pendentes')->dailyAt('21:00');
+
+// Fotografa o passivo por modalidade e loga alerta (PNCP_PENDING_DOCS_BACKLOG_ALERTA)
+// se alguma modalidade ficar acima do limiar mesmo após a varredura das 21h
+// (que historicamente leva ~3h para esvaziar). Não corrige nada sozinho —
+// é o sinal de que o teto (pncp.pending_documents_max_per_run) parou de dar
+// conta do fluxo diário daquela modalidade. Ver decisão registrada em
+// config/pncp.php sobre manter o Fase 1/Fase 2 desacoplado.
+Schedule::command('pncp:monitorar-documentos-pendentes')->dailyAt('23:45');

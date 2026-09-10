@@ -42,6 +42,50 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Teto por modalidade na varredura de documentos pendentes
+    |--------------------------------------------------------------------------
+    |
+    | O retryUntil de cada lote (6h, ver `retry_until_hours`) grava a janela
+    | máxima antes do job morrer de MaxAttemptsExceeded sem ter falhado por
+    | conta própria. O limitador global permite ~1.800 requisições/hora, ou
+    | seja ~10.800 numa janela de 6h.
+    |
+    | O valor original (1.000) foi calibrado para o pior caso teórico das 10
+    | modalidades cheias ao mesmo tempo (10.000 ≤ 10.800). Na prática, só
+    | 3-4 modalidades (6, 7, 8 e 9 — Pregão, Dispensa, Inexigibilidade,
+    | Credenciamento) acumulam volume relevante; as demais ficam em zero na
+    | maioria dos dias. Em 10/09/2026 o run das 09h processou 4.139 registros
+    | em 2h47min (~2,4s/registro, já incluindo overhead de fila/circuit
+    | breaker) e ainda sobraram ~3h13min de folga dentro da janela de 6h —
+    | a folga estava sendo desperdiçada pelo teto, não pelo limitador.
+    |
+    | 2.000 cobre o pior caso realista (4 modalidades grandes cheias ao mesmo
+    | tempo = 8.000 requisições ≈ 5,3h) com margem antes do limite de 6h.
+    |
+    */
+    'pending_documents_max_per_run' => (int) env('PNCP_PENDING_DOCS_MAX_PER_RUN', 2000),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Limiar de alerta do passivo de documentos pendentes
+    |--------------------------------------------------------------------------
+    |
+    | Usado por `pncp:monitorar-documentos-pendentes` (agendado às 23:45,
+    | depois da varredura das 21h). Se uma modalidade ainda tiver mais que
+    | isso de `documents_fetched_at IS NULL` a essa hora, é sinal de que o
+    | teto por execução (acima) não está dando conta do fluxo diário dessa
+    | modalidade e o passivo tende a crescer dia após dia em vez de zerar.
+    |
+    | 3.000 dá folga em relação ao teto de 2.000: uma única execução já
+    | consegue reduzir o passivo abaixo disso mesmo que não zere. Ficar
+    | consistentemente acima ao longo de vários dias é o sinal real de
+    | alarme (isso aqui reporta o instantâneo, não a tendência).
+    |
+    */
+    'pending_documents_alert_threshold' => (int) env('PNCP_PENDING_DOCS_ALERT_THRESHOLD', 3000),
+
+    /*
+    |--------------------------------------------------------------------------
     | Timeouts e orçamento de retentativa HTTP
     |--------------------------------------------------------------------------
     |
