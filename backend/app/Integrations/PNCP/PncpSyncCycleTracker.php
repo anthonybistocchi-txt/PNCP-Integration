@@ -9,6 +9,14 @@ class PncpSyncCycleTracker
     private const TTL_HOURS = 24;
 
     /**
+     * TTL da trava de "modalidade ativa" (ver abaixo). Precisa cobrir o pior
+     * caso de `retry_until_hours` (6h) com margem — senão a trava poderia
+     * expirar por conta própria antes de o ciclo real terminar, negando a
+     * proteção justamente na janela mais longa (a que mais precisa dela).
+     */
+    private const MODALIDADE_ACTIVE_TTL_HOURS = 7;
+
+    /**
      * Inicializa o contador do ciclo. Deve ser chamado pelo Job Mestre
      * imediatamente antes de enfileirar os operários.
      *
@@ -54,6 +62,60 @@ class PncpSyncCycleTracker
         }
 
         return null;
+    }
+
+    /**
+     * Trava por modalidade: impede que a Fase 2 (auto, ao fim da listagem) e
+     * a varredura de pendentes (cron 09h/21h) despachem lotes de documentos
+     * para a mesma modalidade ao mesmo tempo.
+     *
+     * Sem isso, as duas filas de `ProcessPncpDocumentPageJob` competem pelo
+     * mesmo `documents_fetched_at IS NULL`: cada uma redespacha registros que
+     * a outra já está tentando buscar, dobrando as chamadas HTTP para o
+     * mesmo `numero_controle_pncp` sem dobrar a capacidade real do throttle
+     * global — só piora a vazão de ambas.
+     *
+     * `Cache::add` é atômico: só quem chega primeiro consegue a trava; quem
+     * chega depois recebe `false` e deve desistir de despachar, sem esperar.
+     *
+     * @return bool true quando este syncId conseguiu a trava.
+     */
+    public function tryStartModalidade(int $modalidade, string $syncId): bool
+    {
+        return Cache::add(
+            $this->modalidadeActiveKey($modalidade),
+            $syncId,
+            now()->addHours(self::MODALIDADE_ACTIVE_TTL_HOURS)
+        );
+    }
+
+    /**
+     * syncId do ciclo de documentos em andamento para a modalidade, se houver.
+     * Útil só para logging/diagnóstico.
+     */
+    public function activeSyncId(int $modalidade): ?string
+    {
+        return Cache::get($this->modalidadeActiveKey($modalidade));
+    }
+
+    /**
+     * Libera a trava ao fim do ciclo (última unidade concluída, sucesso ou
+     * falha permanente). Só libera se o syncId ainda bater — evita que um
+     * ciclo antigo (ex.: um lote atrasado que finalmente expira) apague a
+     * trava de um ciclo mais novo que já a reconquistou.
+     */
+    public function finishModalidade(int $modalidade, string $syncId): void
+    {
+        $key = $this->modalidadeActiveKey($modalidade);
+
+        if (Cache::get($key) === $syncId) {
+            Cache::forget($key);
+        }
+    }
+
+    private function modalidadeActiveKey(int $modalidade): string
+    {
+        return "pncp_sync:modalidade_active:{$modalidade}";
     }
 
     private function doneKey(string $syncId): string

@@ -2,9 +2,9 @@
 
 use Illuminate\Support\Facades\Schedule;
 
-// 04:30 e não 03:00: às 3h o pool de conexões do PNCP satura (todo mundo
+// 01:30 e não 03:00: às 3h o pool de conexões do PNCP satura (todo mundo
 // agenda no mesmo horário) e as requisições voltam 500 por ~25 minutos.
-Schedule::command('pncp:sync')->dailyAt('04:30');
+Schedule::command('pncp:sync')->dailyAt('02:50');
 
 // Varredura de documentos pendentes (documents_fetched_at nulo), sem filtro
 // de data: rede de segurança para o que a Fase 2 não conseguiu buscar no dia

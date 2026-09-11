@@ -116,6 +116,24 @@ class SyncPncpDocumentsJob implements ShouldQueue, ShouldBeUnique
         $totalRecords = count($records);
         $syncId      = (string) Str::uuid();
 
+        // Trava por modalidade: se a varredura de pendentes (ou outro ciclo
+        // desta própria Fase 2, caso de corrida) já estiver ativa para esta
+        // modalidade, desiste do despacho em vez de duplicar chamadas HTTP
+        // para os mesmos registros. Ver PncpSyncCycleTracker::tryStartModalidade.
+        if (! $cycleTracker->tryStartModalidade($this->dto->codigoModalidadeContratacao, $syncId)) {
+            Log::warning('PNCP_DOCUMENTOS_SKIPPED_COLLISION', [
+                'source'        => 'fase2',
+                'modalidade'    => $this->dto->codigoModalidadeContratacao,
+                'dataInicial'   => $this->dto->dataInicial,
+                'dataFinal'     => $this->dto->dataFinal,
+                'total_records' => $totalRecords,
+                'active_sync_id'=> $cycleTracker->activeSyncId($this->dto->codigoModalidadeContratacao),
+                'reason'        => 'Já existe um ciclo de documentos ativo para esta modalidade (Fase 2 ou varredura de pendentes). Registros continuam com documents_fetched_at nulo; serão retomados no próximo ciclo que conseguir a trava.',
+            ]);
+
+            return;
+        }
+
         $cycleTracker->start($syncId, $totalLotes, $totalRecords);
 
         Log::info('PNCP_DOCUMENTOS_STARTED', [

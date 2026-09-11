@@ -141,6 +141,11 @@ class ProcessPncpDocumentPageJob implements ShouldQueue
             return;
         }
 
+        // Libera a trava de modalidade (ver PncpSyncCycleTracker::tryStartModalidade)
+        // assim que o ciclo termina, para que o próximo ciclo agendado (Fase 2
+        // do dia seguinte ou a próxima varredura de pendentes) já possa rodar.
+        $cycleTracker->finishModalidade($this->modalidade, $this->syncId);
+
         $finishedAt = now();
         $startedAt  = $this->cycleStartedAt !== '' ? Carbon::parse($this->cycleStartedAt) : null;
 
