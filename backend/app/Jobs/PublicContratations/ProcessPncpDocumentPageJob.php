@@ -166,6 +166,12 @@ class ProcessPncpDocumentPageJob implements ShouldQueue
      * retryUntil expirou durante uma degradação prolongada do PNCP). Sem
      * isso, o abandono de um lote de documentos some no log genérico de
      * MaxAttemptsExceeded, sem contexto de modalidade/lote nenhum.
+     *
+     * Também conta o lote no ciclo (0 itens): o handle() não roda nesse
+     * caminho, então sem markPageDone o contador nunca chega em total e a
+     * trava da modalidade fica presa até o TTL — a varredura de pendentes
+     * via SKIPPED_COLLISION mesmo com o ciclo já morto (caso da modalidade 9
+     * em 12/09).
      */
     public function failed(\Throwable $exception): void
     {
@@ -177,5 +183,7 @@ class ProcessPncpDocumentPageJob implements ShouldQueue
             'message'    => $exception->getMessage(),
             'reason'     => 'Lote de documentos esgotou o retryUntil sem conseguir buscar os arquivos. Os registros continuam com documents_fetched_at nulo e serão retentados no próximo ciclo diário.',
         ]);
+
+        $this->markCyclePageDone(app(PncpSyncCycleTracker::class), 0);
     }
 }
