@@ -43,3 +43,26 @@ Schedule::command('pncp:monitorar-documentos-pendentes')->dailyAt('23:45');
 // Gaps de listagem (pncp_listagem_ciclos): só loga WARNING se houver ciclo
 // incompleto. Sempre exit 0 — não polui o schedule:run com stacktrace.
 Schedule::command('pncp:listagem-gaps --for-schedule')->dailyAt('23:50');
+
+// Backfill semanal de listagem. Não perseguimos 100% todo dia — o PNCP não
+// depende da gente — então em vez de retry automático por gap, sábado e
+// domingo (tráfego baixo, PNCP mais saudável) relistam os últimos 7 dias
+// inteiros. O upsert é idempotente: reprocessar o que já convergiu só custa a
+// chamada HTTP, e o que ficou incompleto durante a semana é pego aqui.
+//
+// Sábado e domingo, os dois: cada --days=7 conta a partir da data de execução,
+// então as duas janelas se sobrepõem em ~5 dias — duas chances independentes
+// de pegar o PNCP saudável, em vez de uma só.
+//
+// 02:00 e não 00:45 (mesmo horário do pncp:sync diário): nos fins de semana o
+// ciclo diário de baixo volume historicamente termina em minutos, então às
+// 02:00 o throttle global já está livre para o backfill sem competir com o
+// ciclo do dia.
+//
+// `pncp:listagem-gaps` (23:50, todo dia) é o termômetro: se depois de um fim
+// de semana ainda aparecer ciclo `abandoned`/incompleto de sábado ou domingo,
+// é sinal de que 7 dias de alguma modalidade grande (ex.: 6 — Pregão) não
+// coube no retryUntil de 12h da listagem, e a janela precisa ser revista.
+Schedule::command('pncp:sync --days=7')
+    ->days([0, 6]) // domingo (0) e sábado (6)
+    ->at('02:00');

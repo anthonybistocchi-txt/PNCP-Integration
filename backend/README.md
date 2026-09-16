@@ -27,14 +27,23 @@ Focado em ingestão em volume.
 4. Cada operário faz upsert em massa via `SyncPublicContratationAction`.
 5. Cada ciclo grava uma linha em `pncp_listagem_ciclos` (anunciado no START, processado no FINISH). Gaps incompletos aparecem em `pncp:listagem-gaps`.
 
-Backfill de um intervalo perdido (datas absolutas, depois que a listagem do dia tiver fechado):
+Backfill semanal automático: não perseguimos 100% todo dia (o PNCP não depende
+da gente). Sábado e domingo às 02:00, `pncp:sync --days=7` relista os últimos 7
+dias inteiros, aproveitando o tráfego baixo do fim de semana. É idempotente
+(upsert), então relistar o que já convergiu só custa a chamada HTTP — o que
+ficou incompleto durante a semana é pego aí. As duas janelas (sábado e
+domingo) se sobrepõem em ~5 dias, dando duas chances de pegar o PNCP saudável.
+
+Backfill manual de um intervalo específico (datas absolutas, depois que a
+listagem do dia tiver fechado — útil se o backfill semanal ainda não rodou ou
+se um gap precisa ser corrigido antes do próximo fim de semana):
 
 ```bash
 php artisan pncp:sync --data-inicial=20260914 --data-final=20260915 --modalidades=4,6,8,9
 php artisan pncp:listagem-gaps
 ```
 
-Critério de gap: `abandoned`, `finished` com `items_processados < total_anunciado`, ou `started` além de `PNCP_RETRY_UNTIL_HOURS_LISTAGEM` (12h). Não usar contagem de `INSERT` — o upsert atualiza registros já existentes.
+Critério de gap: `abandoned`, `finished` com `items_processados < total_anunciado`, ou `started` além de `PNCP_RETRY_UNTIL_HOURS_LISTAGEM` (12h). Não usar contagem de `INSERT` — o upsert atualiza registros já existentes. `pncp:listagem-gaps` roda todo dia às 23:50 e é o termômetro para saber se o backfill semanal está de fato fechando os buracos.
 #### Fase 2 — Documentos (automática)
 
 Ao terminar a listagem de uma modalidade, o sistema dispara `SyncPncpDocumentsJob`, que busca arquivos (`/arquivos`) dos registros que o ciclo tocou (`documents_fetched_at IS NULL` e `updated_at >= início do ciclo`) e distribui lotes em `ProcessPncpDocumentPageJob`.
