@@ -5,6 +5,7 @@ namespace App\Jobs\PublicContratations;
 use App\DTOs\PublicContratations\ListPublicContratationsDTO;
 use App\Integrations\PNCP\PncpCircuitBreaker;
 use App\Integrations\PNCP\PncpClient;
+use App\Integrations\PNCP\PncpListagemCicloRecorder;
 use App\Integrations\PNCP\PncpSyncCycleTracker;
 use App\Support\ErrorHandling\PncpFailureHandler;
 use DateTimeInterface;
@@ -34,6 +35,12 @@ class SyncPncpDataJob implements ShouldQueue, ShouldBeUnique
     public int $uniqueFor = 43200; // 12 horas
 
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+
+    /**
+     * sync_id gravado após o START, para o failed() conseguir abandonar o ciclo
+     * se o mestre morrer depois de persistir a linha e antes/durante o despacho.
+     */
+    protected string $syncId = '';
 
     /**
      * Create a new job instance.
@@ -75,7 +82,8 @@ class SyncPncpDataJob implements ShouldQueue, ShouldBeUnique
         PncpClient $client,
         PncpCircuitBreaker $circuitBreaker,
         PncpFailureHandler $failureHandler,
-        PncpSyncCycleTracker $cycleTracker
+        PncpSyncCycleTracker $cycleTracker,
+        PncpListagemCicloRecorder $cicloRecorder
     ): void {
         Log::withContext([
             'job_id' => $this->job ? $this->job->getJobId() : 'master',
@@ -107,6 +115,13 @@ class SyncPncpDataJob implements ShouldQueue, ShouldBeUnique
             $circuitBreaker->recordSuccess(PncpCircuitBreaker::SCOPE_LISTAGEM);
 
             if (! $response || empty($response->data)) {
+                $cicloRecorder->recordEmpty(
+                    $this->dto->codigoModalidadeContratacao,
+                    $this->dto->dataInicial,
+                    $this->dto->dataFinal,
+                    $startedAt
+                );
+
                 Log::info('PNCP_LISTAGEM_FINISHED', [
                     'modalidade'       => $this->dto->codigoModalidadeContratacao,
                     'dataInicial'      => $this->dto->dataInicial,
@@ -121,12 +136,21 @@ class SyncPncpDataJob implements ShouldQueue, ShouldBeUnique
 
             $totalPaginas  = (int) ($response->totalPaginas ?? 1);
             $totalRecords  = (int) ($response->totalRegistros ?? 0);
-            $syncId        = (string) Str::uuid();
+            $this->syncId  = (string) Str::uuid();
 
-            $cycleTracker->start($syncId, $totalPaginas, $totalRecords);
+            $cycleTracker->start($this->syncId, $totalPaginas, $totalRecords);
+            $cicloRecorder->start(
+                $this->syncId,
+                $this->dto->codigoModalidadeContratacao,
+                $this->dto->dataInicial,
+                $this->dto->dataFinal,
+                $totalRecords,
+                $totalPaginas,
+                $startedAt
+            );
 
             Log::info('PNCP_LISTAGEM_STARTED', [
-                'sync_id'       => $syncId,
+                'sync_id'       => $this->syncId,
                 'modalidade'    => $this->dto->codigoModalidadeContratacao,
                 'dataInicial'   => $this->dto->dataInicial,
                 'dataFinal'     => $this->dto->dataFinal,
@@ -142,7 +166,7 @@ class SyncPncpDataJob implements ShouldQueue, ShouldBeUnique
                     $this->dto,
                     $pagina,
                     $tamanhoPagina,
-                    $syncId,
+                    $this->syncId,
                     $startedAt->toIso8601String()
                 );
 
@@ -159,5 +183,21 @@ class SyncPncpDataJob implements ShouldQueue, ShouldBeUnique
                 'dataFinal'   => $this->dto->dataFinal,
             ]);
         }
+    }
+
+    /**
+     * Mestre descartado (retryUntil). Se o START já tinha sido gravado e o
+     * ciclo não fechou, marca abandoned para o pncp:listagem-gaps enxergar.
+     */
+    public function failed(\Throwable $exception): void
+    {
+        if ($this->syncId === '') {
+            return;
+        }
+
+        app(PncpListagemCicloRecorder::class)->abandon(
+            $this->syncId,
+            'SyncPncpDataJob esgotou o retryUntil: ' . $exception->getMessage()
+        );
     }
 }

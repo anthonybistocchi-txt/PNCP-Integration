@@ -39,3 +39,7 @@ Schedule::command('pncp:sync-documentos-pendentes')->cron('*/20 * * * *');
 // estar perto de zero, e não "ainda esvaziando" como nos ~3h que a rajada das
 // 21h levava.
 Schedule::command('pncp:monitorar-documentos-pendentes')->dailyAt('23:45');
+
+// Gaps de listagem (pncp_listagem_ciclos): só loga WARNING se houver ciclo
+// incompleto. Sempre exit 0 — não polui o schedule:run com stacktrace.
+Schedule::command('pncp:listagem-gaps --for-schedule')->dailyAt('23:50');

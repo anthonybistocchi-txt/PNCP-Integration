@@ -21,11 +21,20 @@ Focado em ingestão em volume.
 
 #### Fase 1 — Listagem
 
-1. O scheduler dispara `pncp:sync` diariamente às **04:30**.
+1. O scheduler dispara `pncp:sync` diariamente às **00:45**.
 2. O comando enfileira um `SyncPncpDataJob` por modalidade (1–10 por padrão).
 3. O mestre consulta o PNCP só para descobrir o total de páginas e faz fan-out de `ProcessPncpPageJob` (50 itens por página).
 4. Cada operário faz upsert em massa via `SyncPublicContratationAction`.
+5. Cada ciclo grava uma linha em `pncp_listagem_ciclos` (anunciado no START, processado no FINISH). Gaps incompletos aparecem em `pncp:listagem-gaps`.
 
+Backfill de um intervalo perdido (datas absolutas, depois que a listagem do dia tiver fechado):
+
+```bash
+php artisan pncp:sync --data-inicial=20260914 --data-final=20260915 --modalidades=4,6,8,9
+php artisan pncp:listagem-gaps
+```
+
+Critério de gap: `abandoned`, `finished` com `items_processados < total_anunciado`, ou `started` além de `PNCP_RETRY_UNTIL_HOURS_LISTAGEM` (12h). Não usar contagem de `INSERT` — o upsert atualiza registros já existentes.
 #### Fase 2 — Documentos (automática)
 
 Ao terminar a listagem de uma modalidade, o sistema dispara `SyncPncpDocumentsJob`, que busca arquivos (`/arquivos`) dos registros que o ciclo tocou (`documents_fetched_at IS NULL` e `updated_at >= início do ciclo`) e distribui lotes em `ProcessPncpDocumentPageJob`.

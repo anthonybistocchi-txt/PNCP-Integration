@@ -7,7 +7,9 @@ use App\DTOs\PublicContratations\ListPublicContratationsDTO;
 use App\Integrations\PNCP\PncpCircuitBreaker;
 use App\Integrations\PNCP\PncpClient;
 use App\Integrations\PNCP\PncpDocumentsDispatchSequencer;
+use App\Integrations\PNCP\PncpListagemCicloRecorder;
 use App\Integrations\PNCP\PncpSyncCycleTracker;
+use App\Models\PublicContratations\PncpListagemCiclo;
 use App\Support\ErrorHandling\PncpFailureHandler;
 use Carbon\Carbon;
 use DateTimeInterface;
@@ -60,7 +62,8 @@ class ProcessPncpPageJob implements ShouldQueue
         PncpCircuitBreaker $circuitBreaker,
         PncpFailureHandler $failureHandler,
         PncpSyncCycleTracker $cycleTracker,
-        PncpDocumentsDispatchSequencer $documentsSequencer
+        PncpDocumentsDispatchSequencer $documentsSequencer,
+        PncpListagemCicloRecorder $cicloRecorder
     ): void {
         Log::withContext([
             'sync_id' => $this->syncId,
@@ -89,7 +92,7 @@ class ProcessPncpPageJob implements ShouldQueue
             $circuitBreaker->recordSuccess(PncpCircuitBreaker::SCOPE_LISTAGEM);
 
             if (! $response || empty($response->data)) {
-                $this->markCyclePageDone($cycleTracker, $documentsSequencer, 0);
+                $this->markCyclePageDone($cycleTracker, $documentsSequencer, $cicloRecorder, 0);
 
                 return;
             }
@@ -99,7 +102,7 @@ class ProcessPncpPageJob implements ShouldQueue
             // desacoplada, após o ciclo completo de todas as páginas.
             $syncAction->handle($response->data);
 
-            $this->markCyclePageDone($cycleTracker, $documentsSequencer, count($response->data));
+            $this->markCyclePageDone($cycleTracker, $documentsSequencer, $cicloRecorder, count($response->data));
         } catch (\Throwable $error) {
             // Reagendado (API indisponível ou em pausa): a página ainda vai
             // rodar, então o contador do ciclo não pode avançar.
@@ -114,7 +117,7 @@ class ProcessPncpPageJob implements ShouldQueue
             }
 
             // Só chega aqui quando a falha é permanente/crítica (não haverá retry).
-            $this->markCyclePageDone($cycleTracker, $documentsSequencer, 0);
+            $this->markCyclePageDone($cycleTracker, $documentsSequencer, $cicloRecorder, 0);
         }
     }
 
@@ -124,21 +127,31 @@ class ProcessPncpPageJob implements ShouldQueue
      * escalonado para não empilhar o início da Fase 2 de várias modalidades
      * que terminam a listagem quase juntas.
      * Release (circuit breaker) e retry transiente não devem chamar este método.
+     *
+     * @return array{units_completed: int, items_processed: int, total_records: int}|null
      */
     private function markCyclePageDone(
         PncpSyncCycleTracker $cycleTracker,
         PncpDocumentsDispatchSequencer $documentsSequencer,
+        PncpListagemCicloRecorder $cicloRecorder,
         int $itemsProcessed
-    ): void {
+    ): ?array {
         $summary = $cycleTracker->markPageDone($this->syncId, $itemsProcessed);
 
         if ($summary === null) {
-            return;
+            return null;
         }
 
         $finishedAt   = now();
         $startedAt    = $this->cycleStartedAt !== '' ? Carbon::parse($this->cycleStartedAt) : null;
         $delayMinutes = $documentsSequencer->nextDelayMinutes();
+
+        $cicloRecorder->finish(
+            $this->syncId,
+            $summary['items_processed'],
+            $summary['units_completed'],
+            PncpListagemCiclo::STATUS_FINISHED
+        );
 
         Log::info('PNCP_LISTAGEM_FINISHED', [
             'sync_id'          => $this->syncId,
@@ -163,5 +176,38 @@ class ProcessPncpPageJob implements ShouldQueue
         // quase juntas (o caso comum) bombardeiem /arquivos ao mesmo tempo.
         SyncPncpDocumentsJob::dispatch($this->dto, $this->cycleStartedAt)
             ->delay(now()->addMinutes($delayMinutes));
+
+        return $summary;
+    }
+
+    /**
+     * Página descartada (retryUntil). Conta o lote no ciclo Redis com 0 itens
+     * (mesmo padrão dos documentos). Se essa morte fechar o ciclo, o finish
+     * já foi gravado; senão marca abandoned para o gap ficar queryável.
+     */
+    public function failed(\Throwable $exception): void
+    {
+        Log::error('PNCP_LISTAGEM_PAGE_ABANDONED', [
+            'sync_id'    => $this->syncId,
+            'modalidade' => $this->dto->codigoModalidadeContratacao,
+            'page'       => $this->pagina,
+            'exception'  => get_class($exception),
+            'message'    => $exception->getMessage(),
+            'reason'     => 'Página de listagem esgotou o retryUntil. Se o ciclo não fechar pelas demais páginas, o intervalo fica incompleto e aparece em pncp:listagem-gaps.',
+        ]);
+
+        $summary = $this->markCyclePageDone(
+            app(PncpSyncCycleTracker::class),
+            app(PncpDocumentsDispatchSequencer::class),
+            app(PncpListagemCicloRecorder::class),
+            0
+        );
+
+        if ($summary === null) {
+            app(PncpListagemCicloRecorder::class)->abandon(
+                $this->syncId,
+                'ProcessPncpPageJob esgotou o retryUntil na página ' . $this->pagina
+            );
+        }
     }
 }

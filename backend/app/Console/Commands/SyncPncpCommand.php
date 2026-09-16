@@ -10,11 +10,15 @@ class SyncPncpCommand extends Command
 {
     /**
      * --days=1 (padrão): ontem até hoje, para o cron diário.
-     * --days=30: carga inicial / backfill.
+     * --days=30: carga inicial / backfill relativo.
+     * --data-inicial / --data-final (Ymd): intervalo absoluto; se presentes,
+     * ignoram --days. Necessário para reprocessar um gap depois da meia-noite.
      * --modalidades=1,2,7: restringe o disparo. Sem a flag, usa todas (1–10).
      */
     protected $signature = 'pncp:sync
-        {--days=1 : Quantidade de dias para trás (1 = ontem até hoje)}
+        {--days=1 : Quantidade de dias para trás (1 = ontem até hoje); ignorado se --data-inicial/--data-final forem passados}
+        {--data-inicial= : Data inicial absoluta (Ymd). Exige --data-final}
+        {--data-final= : Data final absoluta (Ymd). Exige --data-inicial}
         {--modalidades= : Lista separada por vírgula. Vazio = todas}';
 
     protected $description = 'Dispara o Job de sincronização com o PNCP para alimentar o banco de dados local.';
@@ -23,7 +27,6 @@ class SyncPncpCommand extends Command
 
     public function handle(): int
     {
-        $days        = max(1, (int) $this->option('days'));
         $modalidades = $this->resolverModalidades();
 
         if ($modalidades === []) {
@@ -31,10 +34,15 @@ class SyncPncpCommand extends Command
             return self::FAILURE;
         }
 
-        $dataInicial = now()->subDays($days)->format('Ymd');
-        $dataFinal   = now()->format('Ymd');
+        $intervalo = $this->resolverIntervalo();
 
-        $this->info("Sincronizando PNCP de {$dataInicial} até {$dataFinal} ({$days} dia(s)). Modalidades: " . implode(', ', $modalidades));
+        if ($intervalo === null) {
+            return self::FAILURE;
+        }
+
+        [$dataInicial, $dataFinal] = $intervalo;
+
+        $this->info("Sincronizando PNCP de {$dataInicial} até {$dataFinal}. Modalidades: " . implode(', ', $modalidades));
 
         foreach ($modalidades as $modalidade) {
             $dto = new ListPublicContratationsDTO(
@@ -53,6 +61,44 @@ class SyncPncpCommand extends Command
         }
 
         return self::SUCCESS;
+    }
+
+    /**
+     * @return array{0: string, 1: string}|null
+     */
+    private function resolverIntervalo(): ?array
+    {
+        $dataInicial = trim((string) $this->option('data-inicial'));
+        $dataFinal   = trim((string) $this->option('data-final'));
+
+        if ($dataInicial === '' && $dataFinal === '') {
+            $days = max(1, (int) $this->option('days'));
+
+            return [
+                now()->subDays($days)->format('Ymd'),
+                now()->format('Ymd'),
+            ];
+        }
+
+        if ($dataInicial === '' || $dataFinal === '') {
+            $this->error('Use --data-inicial e --data-final juntos (formato Ymd), ou só --days.');
+
+            return null;
+        }
+
+        if (! preg_match('/^\d{8}$/', $dataInicial) || ! preg_match('/^\d{8}$/', $dataFinal)) {
+            $this->error('Datas devem estar no formato Ymd (ex.: 20260914).');
+
+            return null;
+        }
+
+        if ($dataInicial > $dataFinal) {
+            $this->error('data-inicial não pode ser posterior a data-final.');
+
+            return null;
+        }
+
+        return [$dataInicial, $dataFinal];
     }
 
     /**
