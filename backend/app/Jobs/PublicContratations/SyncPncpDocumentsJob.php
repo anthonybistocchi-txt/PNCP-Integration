@@ -30,8 +30,10 @@ class SyncPncpDocumentsJob implements ShouldQueue, ShouldBeUnique
     public $timeout = 300;
 
     // Cobre a janela do retryUntil, senão o lock de unicidade expira
-    // enquanto o job ainda está aguardando.
-    public int $uniqueFor = 21600; // 6 horas
+    // enquanto o job ainda está aguardando. O uniqueId inclui o intervalo de
+    // datas, então esta trava é naturalmente uma por modalidade por ciclo —
+    // não corre o risco de engolir janelas como a da drenagem contínua.
+    public int $uniqueFor = 7200; // 2 horas
 
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
@@ -61,7 +63,7 @@ class SyncPncpDocumentsJob implements ShouldQueue, ShouldBeUnique
      */
     public function retryUntil(): DateTimeInterface
     {
-        return now()->addHours((int) config('pncp.retry_until_hours', 6));
+        return now()->addHours((int) config('pncp.retry_until_hours.documentos', 2));
     }
 
     /**
@@ -94,6 +96,15 @@ class SyncPncpDocumentsJob implements ShouldQueue, ShouldBeUnique
             ->where('codigo_modalidade_contratacao', $this->dto->codigoModalidadeContratacao)
             ->where('updated_at', '>=', $touchedSince)
             ->whereNotNull('sequencial_compra')
+            // Mesmo teto da drenagem, e pelo mesmo motivo: um ciclo só pode
+            // durar o que couber no seu retryUntil de 2h. Sem teto, a Fase 2
+            // da modalidade 6 despachava os ~5.300 registros do dia (≈2,9h de
+            // limitador) e, pior que morrer na cauda, mantinha a trava da
+            // modalidade presa durante todo esse tempo — bloqueando a
+            // drenagem exatamente na modalidade de maior volume. O que passar
+            // do teto continua nulo e entra na próxima janela, em ≤20 min.
+            ->orderByDesc('data_publicacao_pncp')
+            ->limit((int) config('pncp.pending_documents_max_per_run', 150))
             ->get()
             ->toArray();
 
@@ -111,7 +122,7 @@ class SyncPncpDocumentsJob implements ShouldQueue, ShouldBeUnique
             return;
         }
 
-        $lotes       = array_chunk($records, 50);
+        $lotes       = array_chunk($records, (int) config('pncp.documents_lote_size', 10));
         $totalLotes  = count($lotes);
         $totalRecords = count($records);
         $syncId      = (string) Str::uuid();

@@ -33,11 +33,12 @@ class SyncPncpPendingDocumentsCommand extends Command
         $this->info('Varredura de documentos pendentes. Modalidades: ' . implode(', ', $modalidades));
 
         // Escalona o disparo entre modalidades para não empilhar N jobs
-        // mestres buscando/despachando lotes ao mesmo tempo. Independente do
-        // PncpDocumentsDispatchSequencer usado pelo fluxo automático diário:
-        // esta varredura roda em horários próprios (fora do pico das 04:30),
-        // então não precisa competir pelo mesmo contador do dia.
-        $staggerMinutes = max(0, (int) config('pncp.documents_stagger_minutes', 8));
+        // mestres buscando/despachando lotes ao mesmo tempo. Usa o stagger
+        // próprio da drenagem, não o de 8 min da Fase 2: 10 modalidades × 8
+        // min = 72 min estourariam a janela de 20 min, e as últimas
+        // modalidades seriam despachadas depois de a janela seguinte já ter
+        // começado — na prática, nunca sairiam do lugar.
+        $staggerMinutes = max(0, (int) config('pncp.pending_documents_stagger_minutes', 1));
 
         foreach (array_values($modalidades) as $indice => $modalidade) {
             $delayMinutes = $indice * $staggerMinutes;

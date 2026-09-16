@@ -10,11 +10,17 @@ class PncpSyncCycleTracker
 
     /**
      * TTL da trava de "modalidade ativa" (ver abaixo). Precisa cobrir o pior
-     * caso de `retry_until_hours` (6h) com margem — senão a trava poderia
-     * expirar por conta própria antes de o ciclo real terminar, negando a
-     * proteção justamente na janela mais longa (a que mais precisa dela).
+     * caso de `retry_until_hours.documentos` (2h) com margem — senão a trava
+     * poderia expirar por conta própria antes de o ciclo real terminar,
+     * negando a proteção justamente na janela mais longa.
+     *
+     * Acompanhou a queda de 6h para 2h do retryUntil dos documentos. Manter
+     * em 7h seria pior que inútil agora: com a drenagem rodando a cada 20
+     * min, uma trava órfã de um ciclo já morto bloquearia ~21 janelas
+     * seguidas da modalidade. O `finishModalidade` (inclusive via failed())
+     * continua sendo o caminho normal de liberação; este TTL é só a rede.
      */
-    private const MODALIDADE_ACTIVE_TTL_HOURS = 7;
+    private const MODALIDADE_ACTIVE_TTL_HOURS = 3;
 
     /**
      * Inicializa o contador do ciclo. Deve ser chamado pelo Job Mestre

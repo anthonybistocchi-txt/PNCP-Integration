@@ -30,13 +30,16 @@ Focado em ingestão em volume.
 
 Ao terminar a listagem de uma modalidade, o sistema dispara `SyncPncpDocumentsJob`, que busca arquivos (`/arquivos`) dos registros que o ciclo tocou (`documents_fetched_at IS NULL` e `updated_at >= início do ciclo`) e distribui lotes em `ProcessPncpDocumentPageJob`.
 
-#### Varredura de pendentes (rede de segurança)
+#### Drenagem de pendentes (caminho principal dos documentos)
 
-`pncp:sync-documentos-pendentes` às **09:00** e **21:00** reprocessa registros com `documents_fetched_at` nulo de qualquer data (teto por modalidade, mais recentes primeiro). Cobre o que a Fase 2 não conseguiu quando o PNCP estava instável.
+`pncp:sync-documentos-pendentes` roda **a cada 20 minutos** e busca registros com `documents_fetched_at` nulo de qualquer data (teto por modalidade e por janela, mais recentes primeiro).
+
+Era uma rede de segurança em duas rajadas (09:00 e 21:00) e passou a ser o caminho principal: com ~12,2 mil registros/dia num dia útil e um limitador de 1.800 req/h, concentrar os documentos em duas janelas fazia a fase competir com a listagem pelo mesmo orçamento e derrubar as duas. A conta que amarra teto, intervalo e limitador está em `config/pncp.php`.
 
 #### Resiliência
 
-- **Retry por tempo**: jobs usam `retryUntil` (~6h via `PNCP_RETRY_UNTIL_HOURS`), não um contador fixo de 5 tentativas.
+- **Retry por tempo**: jobs usam `retryUntil`, separado por escopo — **12h** para a listagem (`PNCP_RETRY_UNTIL_HOURS_LISTAGEM`), porque a página perdida não é repescada por nenhum ciclo futuro, e **2h** para documentos (`PNCP_RETRY_UNTIL_HOURS_DOCUMENTOS`), porque o lote abandonado volta na janela seguinte da drenagem.
+- **Progresso parcial**: um lote de documentos persiste o que já buscou antes de voltar para a fila, e a retentativa só busca o que ainda está nulo — sem isso, uma falha em qualquer item descartava o lote inteiro e a retentativa refazia todas as chamadas.
 - **Throttle global**: intervalo mínimo entre requisições ao PNCP (`PNCP_MIN_INTERVAL_SECONDS`), compartilhado por todos os workers.
 - **Circuit breaker** (Redis): pausa escalonada em 429 e em falhas consecutivas 5xx/timeout; escopos separados para listagem e documentos.
 - **Logs estruturados**: eventos nomeados (`PNCP_LISTAGEM_*`, `PNCP_DOCUMENTOS_*`, `PNCP_BREAKER_*`, etc.) em `storage/logs/laravel.log`. Progresso da fila também aparece no stdout dos containers (`docker compose logs worker`).

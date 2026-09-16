@@ -45,44 +45,69 @@ return [
     | Teto por modalidade na varredura de documentos pendentes
     |--------------------------------------------------------------------------
     |
-    | O retryUntil de cada lote (6h, ver `retry_until_hours`) grava a janela
-    | máxima antes do job morrer de MaxAttemptsExceeded sem ter falhado por
-    | conta própria. O limitador global permite ~1.800 requisições/hora, ou
-    | seja ~10.800 numa janela de 6h.
+    | A varredura deixou de ser 2 rajadas diárias e passou a ser drenagem
+    | contínua (ver routes/console.php). Isso inverte o dimensionamento: o teto
+    | não precisa mais cobrir o passivo de um dia inteiro numa execução — ele
+    | precisa caber no orçamento do limitador global dentro de UMA janela.
     |
-    | O valor original (1.000) foi calibrado para o pior caso teórico das 10
-    | modalidades cheias ao mesmo tempo (10.000 ≤ 10.800). Na prática, só
-    | 3-4 modalidades (6, 7, 8 e 9 — Pregão, Dispensa, Inexigibilidade,
-    | Credenciamento) acumulam volume relevante; as demais ficam em zero na
-    | maioria dos dias. Em 10/09/2026 o run das 09h processou 4.139 registros
-    | em 2h47min (~2,4s/registro, já incluindo overhead de fila/circuit
-    | breaker) e ainda sobraram ~3h13min de folga dentro da janela de 6h —
-    | a folga estava sendo desperdiçada pelo teto, não pelo limitador.
+    | A conta que amarra os três números:
     |
-    | 2.000 cobre o pior caso realista (4 modalidades grandes cheias ao mesmo
-    | tempo = 8.000 requisições ≈ 5,3h) com margem antes do limite de 6h.
+    |     teto × modalidades_com_volume ≤ intervalo × 1.800 req/h
+    |
+    | Com intervalo de 20 min o orçamento é de 600 requisições por janela. As
+    | modalidades com volume real são ~4 (6, 8, 9 e 4); as outras voltam
+    | `empty` em milissegundos. 150 × 4 = 600 encaixa no pior caso, e a média
+    | é bem menor: 12.200 documentos/dia ÷ 72 janelas = ~170 por janela.
+    |
+    | O teto antigo (2.000) era o motivo de a modalidade 6 nunca convergir:
+    | 5.292 registros/dia contra 2 execuções × 2.000 = 4.000 de capacidade
+    | máxima garantiam passivo crescente de ~1.300/dia, mesmo com 100% de
+    | sucesso. Com 72 janelas × 150 a mesma modalidade tem 10.800 de teto.
+    |
+    | Se aparecer fila represada (lotes morrendo de retryUntil sem o PNCP
+    | estar fora), este é o número para baixar — não o intervalo.
     |
     */
-    'pending_documents_max_per_run' => (int) env('PNCP_PENDING_DOCS_MAX_PER_RUN', 2000),
+    'pending_documents_max_per_run' => (int) env('PNCP_PENDING_DOCS_MAX_PER_RUN', 150),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Intervalo da drenagem e escalonamento entre modalidades
+    |--------------------------------------------------------------------------
+    |
+    | `pending_documents_interval_minutes` existe para documentar/validar a
+    | conta acima; quem agenda de fato é routes/console.php. Mantenha os dois
+    | em sincronia ao mexer.
+    |
+    | O stagger da drenagem é próprio, e pequeno: o de 8 min da Fase 2 (abaixo)
+    | existe para espalhar um pico de volume diário inteiro, mas aqui 10
+    | modalidades × 8 min = 72 min estourariam a própria janela de 20 min — as
+    | últimas modalidades seriam despachadas depois de a janela seguinte já ter
+    | começado. 1 min espalha o trabalho de banco dos Jobs Mestres sem sair da
+    | janela; o ritmo das chamadas HTTP quem dita é o limitador global.
+    |
+    */
+    'pending_documents_interval_minutes' => (int) env('PNCP_PENDING_DOCS_INTERVAL_MINUTES', 20),
+    'pending_documents_stagger_minutes'  => (int) env('PNCP_PENDING_DOCS_STAGGER_MINUTES', 1),
 
     /*
     |--------------------------------------------------------------------------
     | Limiar de alerta do passivo de documentos pendentes
     |--------------------------------------------------------------------------
     |
-    | Usado por `pncp:monitorar-documentos-pendentes` (agendado às 23:45,
-    | depois da varredura das 21h). Se uma modalidade ainda tiver mais que
-    | isso de `documents_fetched_at IS NULL` a essa hora, é sinal de que o
-    | teto por execução (acima) não está dando conta do fluxo diário dessa
-    | modalidade e o passivo tende a crescer dia após dia em vez de zerar.
+    | Usado por `pncp:monitorar-documentos-pendentes` (agendado às 23:45).
+    | Se uma modalidade ainda tiver mais que isso de `documents_fetched_at
+    | IS NULL` a essa hora, a drenagem não está acompanhando o fluxo do dia.
     |
-    | 3.000 dá folga em relação ao teto de 2.000: uma única execução já
-    | consegue reduzir o passivo abaixo disso mesmo que não zere. Ficar
-    | consistentemente acima ao longo de vários dias é o sinal real de
-    | alarme (isso aqui reporta o instantâneo, não a tendência).
+    | 3.000 fazia sentido quando o teto era 2.000 por rajada: era o limiar
+    | acima do qual uma única execução não conseguia mais reverter o passivo.
+    | Com drenagem contínua a expectativa muda — às 23:45 o passivo deveria
+    | estar perto de zero, porque a última janela rodou há no máximo 20 min.
+    | 1.000 ainda dá folga para um dia de PNCP ruim sem virar alarme falso,
+    | mas passa a acusar estagnação muito mais cedo que antes.
     |
     */
-    'pending_documents_alert_threshold' => (int) env('PNCP_PENDING_DOCS_ALERT_THRESHOLD', 3000),
+    'pending_documents_alert_threshold' => (int) env('PNCP_PENDING_DOCS_ALERT_THRESHOLD', 1000),
 
     /*
     |--------------------------------------------------------------------------
@@ -97,14 +122,49 @@ return [
     | 2 tentativas porque o PNCP é instável por requisição: já houve caso de
     | duas falhas seguidas e sucesso na terceira com os mesmos parâmetros.
     |
+    | `document_timeout` era 10s por herança, não por medição — enquanto a
+    | listagem sempre teve 40s. Em 15/09 isso cortou a faixa de 10-30s, que é
+    | justamente onde o PNCP responde quando está sob carga: ~58% das vagas do
+    | limitador da varredura das 09h viraram `cURL 28 after 10002ms`, e cada
+    | uma dessas tentativas descartadas consumiu uma vaga sem gerar documento.
+    | 30s cobre as respostas boas já observadas (27s, 29s) e ainda corta antes
+    | do erro de pool (~49s), que não vale esperar.
+    |
+    | Atenção ao mexer: o pior caso por item é `retries × document_timeout +
+    | retry_sleep_ms` (2 × 30s + 3s = 63s), e é ele que dimensiona
+    | `documents_lote_size` contra o $timeout do ProcessPncpDocumentPageJob.
+    |
     */
     'http' => [
         'connect_timeout' => (int) env('PNCP_HTTP_CONNECT_TIMEOUT', 5),
         'timeout'         => (int) env('PNCP_HTTP_TIMEOUT', 40),
-        'document_timeout'=> (int) env('PNCP_HTTP_DOCUMENT_TIMEOUT', 10),
+        'document_timeout'=> (int) env('PNCP_HTTP_DOCUMENT_TIMEOUT', 30),
         'retries'         => (int) env('PNCP_HTTP_RETRIES', 2),
         'retry_sleep_ms'  => (int) env('PNCP_HTTP_RETRY_SLEEP_MS', 3000),
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Tamanho do lote de documentos
+    |--------------------------------------------------------------------------
+    |
+    | Quantos registros cada ProcessPncpDocumentPageJob busca. Dois limites
+    | independentes puxam esse número para baixo:
+    |
+    | 1. Tempo de parede: pior caso é `lote × 63s` (ver bloco http acima) e
+    |    precisa caber no $timeout de 900s do job — e, por consequência, no
+    |    REDIS_QUEUE_RETRY_AFTER (960s). 10 × 63s = 630s, com folga para o
+    |    limitador global e a escrita no banco. Era 50, que a 30s por item
+    |    daria 1.575s e passaria a ser morto pelo worker no meio do lote.
+    |
+    | 2. Retrabalho na retentativa: o lote é a unidade de release. Mesmo com a
+    |    persistência parcial do ProcessPncpDocumentPageJob, lote menor = menos
+    |    itens em jogo por falha. Com lote 50 e 30% de falha por item, a chance
+    |    de um lote fechar era 0,7^50 ≈ 0,00002% — foi isso que produziu os
+    |    contadores de `attempt: 31..51` em 15/09.
+    |
+    */
+    'documents_lote_size' => (int) env('PNCP_DOCUMENTS_LOTE_SIZE', 10),
 
     /*
     |--------------------------------------------------------------------------
@@ -164,8 +224,31 @@ return [
     | sem ter falhado por conta própria. Com retryUntil definido o $tries é
     | ignorado e quem manda é o relógio.
     |
+    | Separado por escopo porque os dois lados têm economias opostas, e o
+    | valor único de 6h estava errado para os dois ao mesmo tempo:
+    |
+    | LISTAGEM (12h) — é barata (só ~244 páginas/dia, ~8 min de limitador) e
+    | insubstituível: se uma página morre, aquele pedaço do dia não entra no
+    | banco e nenhum ciclo futuro volta a olhar para ele, então a Fase 2 e a
+    | drenagem nunca sabem que ele existiu. Em 15/09 as páginas das
+    | modalidades 4/6/8/9 morreram às 11:17 e 12:29-12:52, exatamente 6h
+    | depois do início, no meio de pausas de 1h do breaker — a listagem nunca
+    | terminou e a Fase 2 dessas modalidades nunca disparou. 12h absorvem o
+    | padrão de 3-4 outages de 1h já observado e ainda morrem bem antes do
+    | ciclo seguinte (00:45 + 12h = 12:45).
+    |
+    | DOCUMENTOS (2h) — é o oposto: cada lote é pequeno e totalmente
+    | recuperável, porque os registros continuam com `documents_fetched_at`
+    | nulo e a próxima janela da drenagem os repesca em ≤20 min. Insistir 6h
+    | contra um PNCP fora do ar só ocupa worker e queima vaga do limitador
+    | refazendo trabalho. 2h dá ~6x de margem sobre a espera real de um lote
+    | numa janela saudável, e o abandono deixou de ser perda de dado.
+    |
     */
-    'retry_until_hours' => (int) env('PNCP_RETRY_UNTIL_HOURS', 6),
+    'retry_until_hours' => [
+        'listagem'   => (int) env('PNCP_RETRY_UNTIL_HOURS_LISTAGEM', 12),
+        'documentos' => (int) env('PNCP_RETRY_UNTIL_HOURS_DOCUMENTOS', 2),
+    ],
 
     /*
     |--------------------------------------------------------------------------

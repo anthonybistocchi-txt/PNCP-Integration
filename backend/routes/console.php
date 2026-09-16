@@ -2,31 +2,40 @@
 
 use Illuminate\Support\Facades\Schedule;
 
-// 01:30 e não 03:00: às 3h o pool de conexões do PNCP satura (todo mundo
+// 00:45 e não 03:00: às 3h o pool de conexões do PNCP satura (todo mundo
 // agenda no mesmo horário) e as requisições voltam 500 por ~25 minutos.
 Schedule::command('pncp:sync')->dailyAt('00:45');
 
-// Varredura de documentos pendentes (documents_fetched_at nulo), sem filtro
-// de data: rede de segurança para o que a Fase 2 não conseguiu buscar no dia
-// (ex.: /arquivos fora do ar, como nos ~8h de 05-06/09). Não serve para cobrir
-// o ciclo do dia — disso a Fase 2 já dá conta ao fim da listagem.
+// Drenagem contínua dos documentos pendentes (documents_fetched_at nulo), sem
+// filtro de data. Deixou de ser "rede de segurança em duas rajadas" e passou a
+// ser o caminho principal dos documentos.
 //
-// Duas execuções, e não três. O uniqueId do job é por modalidade + dia e o
-// uniqueFor é de 6h, então duas execuções separadas por menos que isso podem
-// ser descartadas em silêncio se a primeira ainda estiver na fila — foi o caso
-// do par 09h/15h, distantes exatamente 6h. 09h e 21h ficam 12h apart.
+// O que 15/09 mostrou sobre as duas rajadas (09h e 21h):
 //
-// Com o teto por execução, cada varredura despacha ~117 lotes (~3,2h de fila),
-// dentro da janela de retryUntil mesmo dividindo a fila com a Fase 2. Duas
-// ondas pequenas por dia drenam o passivo em ~metade do tempo de uma só, e dão
-// duas chances independentes de pegar o PNCP saudável.
-Schedule::command('pncp:sync-documentos-pendentes')->dailyAt('09:00');
-Schedule::command('pncp:sync-documentos-pendentes')->dailyAt('21:00');
+//  - cada uma abria ciclos de 6h com teto de 2.000 por modalidade. A 6 recebe
+//    ~5.300 registros/dia, então 2 × 2.000 era teto menor que o fluxo: o
+//    passivo crescia ~1.300/dia mesmo com 100% de sucesso;
+//  - concentrar tudo em duas janelas fazia a fase de documentos competir pelo
+//    mesmo limitador global da listagem e, nas duas vezes, derrubar as duas;
+//  - um lote que pegasse o PNCP em pausa de 1h morria de retryUntil e só teria
+//    nova chance 12h depois.
+//
+// A cada 20 min o desenho inverte: a janela é pequena, o teto cabe no
+// orçamento do limitador (ver a conta em config/pncp.php), um lote abandonado
+// é repescado na janela seguinte em vez de meio dia depois, e a carga fica
+// espalhada no lugar de dois picos. Mantenha o intervalo daqui em sincronia
+// com `pncp.pending_documents_interval_minutes`, que dimensiona o teto.
+//
+// cron explícito em vez de everyTwentyMinutes(): esse helper não existe nesta
+// versão do Laravel (só every{Five,Ten,Fifteen,Thirty}Minutes).
+Schedule::command('pncp:sync-documentos-pendentes')->cron('*/20 * * * *');
 
 // Fotografa o passivo por modalidade e loga alerta (PNCP_PENDING_DOCS_BACKLOG_ALERTA)
-// se alguma modalidade ficar acima do limiar mesmo após a varredura das 21h
-// (que historicamente leva ~3h para esvaziar). Não corrige nada sozinho —
-// é o sinal de que o teto (pncp.pending_documents_max_per_run) parou de dar
-// conta do fluxo diário daquela modalidade. Ver decisão registrada em
-// config/pncp.php sobre manter o Fase 1/Fase 2 desacoplado.
+// se alguma modalidade ficar acima do limiar. Não corrige nada sozinho — é o
+// sinal de que a drenagem parou de acompanhar o fluxo daquela modalidade.
+//
+// Com a drenagem contínua a leitura das 23:45 fica mais dura de propósito: a
+// última janela rodou há no máximo 20 min, então o passivo a essa hora deveria
+// estar perto de zero, e não "ainda esvaziando" como nos ~3h que a rajada das
+// 21h levava.
 Schedule::command('pncp:monitorar-documentos-pendentes')->dailyAt('23:45');

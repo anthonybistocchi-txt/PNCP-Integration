@@ -25,21 +25,25 @@ use Illuminate\Support\Str;
  * registros ficariam com `documentos: null` para sempre, porque nenhum ciclo
  * futuro volta a olhar para eles.
  *
- * Roda uma vez por dia, em horário próprio, fora do pico do cron principal.
- * Cada execução leva no máximo `pncp.pending_documents_max_per_run` registros
- * por modalidade, pelos mais recentes primeiro: despachar o passivo inteiro
- * de uma vez só enfileira lotes que morrem de MaxAttemptsExceeded antes de
- * serem atendidos. Ver o comentário em `config/pncp.php` para a conta do
- * valor escolhido.
+ * Roda de forma contínua (ver routes/console.php), não mais em duas rajadas
+ * diárias. Cada janela leva no máximo `pncp.pending_documents_max_per_run`
+ * registros por modalidade, pelos mais recentes primeiro — dimensionado para
+ * caber no orçamento do limitador global dentro de uma janela, em vez de
+ * tentar dar conta do passivo do dia numa execução só. Ver a conta em
+ * `config/pncp.php`.
  */
 class SyncPncpPendingDocumentsJob implements ShouldQueue, ShouldBeUnique
 {
     // Dá 5 minutos de tolerância para descobrir os registros e enfileirar os workers.
     public $timeout = 300;
 
-    // Cobre a janela do retryUntil, senão o lock de unicidade expira
-    // enquanto o job ainda está aguardando.
-    public int $uniqueFor = 21600; // 6 horas
+    // Precisa ser MENOR que o intervalo da drenagem (20 min), senão a própria
+    // trava de unicidade engole as janelas seguintes. Era 6h com uniqueId por
+    // dia: nesse formato, de 18 disparos num bloco de 6h, 17 eram descartados
+    // em silêncio — o mesmo defeito que já tinha apagado o par 09h/15h. Só
+    // precisa cobrir a vida real deste job, que é descobrir e despachar
+    // (limitada pelo $timeout de 300s).
+    public int $uniqueFor = 900; // 15 minutos
 
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
@@ -48,20 +52,27 @@ class SyncPncpPendingDocumentsJob implements ShouldQueue, ShouldBeUnique
     ) {}
 
     /**
-     * Unique por modalidade + dia. Evita que duas execuções agendadas no
-     * mesmo dia (ex.: 09h e 15h) colidam se a primeira ainda não terminou.
+     * Unique só por modalidade: sem a data, porque com drenagem contínua a
+     * janela relevante é o `uniqueFor` acima, não o dia. Quem impede dois
+     * ciclos de documentos concorrentes na mesma modalidade é a trava do
+     * PncpSyncCycleTracker, que é semântica em vez de temporal.
      */
     public function uniqueId(): string
     {
-        return 'docs_pending:' . $this->modalidade . ':' . now()->format('Ymd');
+        return 'docs_pending:' . $this->modalidade;
     }
 
     /**
      * Limite por tempo em vez de por tentativas.
+     *
+     * Uma janela, e não as 2h dos lotes: este job só consulta o banco e
+     * despacha. Se não conseguir fazer isso dentro da janela, a janela
+     * seguinte já traz a fotografia atualizada do que está nulo — insistir
+     * seria despachar um recorte velho.
      */
     public function retryUntil(): DateTimeInterface
     {
-        return now()->addHours((int) config('pncp.retry_until_hours', 6));
+        return now()->addMinutes((int) config('pncp.pending_documents_interval_minutes', 20));
     }
 
     /**
@@ -84,7 +95,7 @@ class SyncPncpPendingDocumentsJob implements ShouldQueue, ShouldBeUnique
             ->where('codigo_modalidade_contratacao', $this->modalidade)
             ->whereNotNull('sequencial_compra')
             ->orderByDesc('data_publicacao_pncp')
-            ->limit((int) config('pncp.pending_documents_max_per_run', 2000))
+            ->limit((int) config('pncp.pending_documents_max_per_run', 150))
             ->get()
             ->toArray();
 
@@ -100,7 +111,7 @@ class SyncPncpPendingDocumentsJob implements ShouldQueue, ShouldBeUnique
             return;
         }
 
-        $lotes        = array_chunk($records, 50);
+        $lotes        = array_chunk($records, (int) config('pncp.documents_lote_size', 10));
         $totalLotes   = count($lotes);
         $totalRecords = count($records);
         $syncId       = (string) Str::uuid();

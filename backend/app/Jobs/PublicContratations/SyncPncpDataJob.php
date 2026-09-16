@@ -27,9 +27,11 @@ class SyncPncpDataJob implements ShouldQueue, ShouldBeUnique
     // vira release com a pausa que o circuit breaker determinar.
     public $backoff = [120, 300, 600];
 
-    // Precisa cobrir a janela do retryUntil, senão o lock de unicidade expira
-    // enquanto o job ainda está esperando o circuit breaker.
-    public int $uniqueFor = 21600; // 6 horas
+    // Precisa cobrir a janela do retryUntil (agora 12h para a listagem),
+    // senão o lock de unicidade expira enquanto o job ainda está esperando o
+    // circuit breaker. Continua morrendo bem antes do ciclo seguinte, porque
+    // o cron é diário às 00:45 (00:45 + 12h = 12:45).
+    public int $uniqueFor = 43200; // 12 horas
 
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
@@ -63,7 +65,7 @@ class SyncPncpDataJob implements ShouldQueue, ShouldBeUnique
      */
     public function retryUntil(): DateTimeInterface
     {
-        return now()->addHours((int) config('pncp.retry_until_hours', 6));
+        return now()->addHours((int) config('pncp.retry_until_hours.listagem', 12));
     }
 
     /**

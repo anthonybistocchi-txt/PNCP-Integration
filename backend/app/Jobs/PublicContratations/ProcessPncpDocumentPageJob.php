@@ -6,6 +6,7 @@ use App\Actions\PublicContratations\SyncPublicContratationDocumentsAction;
 use App\Integrations\PNCP\PncpCircuitBreaker;
 use App\Integrations\PNCP\PncpClient;
 use App\Integrations\PNCP\PncpSyncCycleTracker;
+use App\Models\PublicContratations\PublicContratation;
 use App\Support\ErrorHandling\PncpFailureHandler;
 use Carbon\Carbon;
 use DateTimeInterface;
@@ -31,8 +32,12 @@ class ProcessPncpDocumentPageJob implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    // 50 itens × timeout de 10s por chamada = 500s máximo teórico.
-    // 900s dá folga para jitter, retry HTTP interno e escrita no DB.
+    // Pior caso por item: retries × document_timeout + retry_sleep_ms
+    // (2 × 30s + 3s = 63s). Com documents_lote_size = 10 dá 630s, e os 900s
+    // ainda cobrem a espera do limitador global e a escrita no banco.
+    // Refaça essa conta ao mexer no lote ou no timeout de documentos: passar
+    // de 900s faz o worker matar o job no meio do lote, e passar do
+    // REDIS_QUEUE_RETRY_AFTER (960s) faz a fila entregar o lote em duplicata.
     public $timeout = 900;
 
     // Atrasos para falhas que não são da API do PNCP (deadlock de banco, etc.).
@@ -61,7 +66,7 @@ class ProcessPncpDocumentPageJob implements ShouldQueue
      */
     public function retryUntil(): DateTimeInterface
     {
-        return now()->addHours((int) config('pncp.retry_until_hours', 6));
+        return now()->addHours((int) config('pncp.retry_until_hours.documentos', 2));
     }
 
     /**
@@ -85,10 +90,20 @@ class ProcessPncpDocumentPageJob implements ShouldQueue
             return;
         }
 
+        // Retentativa não recomeça do zero: só busca o que ainda está nulo.
+        $pendentes = $this->itemsAindaPendentes();
+        $jaFeitos  = count($this->items) - count($pendentes);
+
+        if ($pendentes === []) {
+            $this->markCyclePageDone($cycleTracker, $jaFeitos);
+
+            return;
+        }
+
         $upsertData = [];
 
         try {
-            foreach ($this->items as $item) {
+            foreach ($pendentes as $item) {
                 $cnpj       = $item['orgao_cnpj'];
                 $ano        = $item['ano_compra'];
                 $sequencial = $item['sequencial_compra'];
@@ -107,26 +122,71 @@ class ProcessPncpDocumentPageJob implements ShouldQueue
             }
 
             // Persiste o lote inteiro de uma vez (1 query para N itens).
-            // Se uma exceção ocorreu no loop acima, o upsert não é chamado e o
-            // job inteiro é devolvido para a fila — garantindo atomicidade do lote.
             $syncAction->handle($upsertData);
 
-            $this->markCyclePageDone($cycleTracker, count($upsertData));
+            $this->markCyclePageDone($cycleTracker, count($upsertData) + $jaFeitos);
         } catch (\Throwable $error) {
+            // Grava o que já veio antes de devolver o lote para a fila.
+            //
+            // O lote era atômico: uma falha em qualquer item descartava o
+            // $upsertData inteiro. Como o `documents_fetched_at` de cada
+            // registro é independente, essa atomicidade não protegia nada e
+            // custava caro — com 30% de falha por item, a chance de um lote de
+            // 50 fechar era 0,7^50 ≈ 0,00002%, então na prática toda tentativa
+            // rebuscava tudo e morria de novo, queimando vaga do limitador
+            // global em registros que já tinham sido obtidos e jogados fora.
+            // É a origem dos `attempt: 31..51` de 15/09.
+            if ($upsertData !== []) {
+                $syncAction->handle($upsertData);
+            }
+
             // Reagendado (API indisponível ou em pausa): o lote ainda vai rodar,
             // então o contador do ciclo de documentos não pode avançar.
             if ($failureHandler->handle($error, $this, PncpCircuitBreaker::SCOPE_DOCUMENTOS, [
-                'action'    => 'ProcessPncpDocumentPageJob',
-                'lote_size' => count($this->items),
-                'attempt'   => $this->attempts(),
-                'modalidade'=> $this->modalidade,
+                'action'     => 'ProcessPncpDocumentPageJob',
+                'lote_size'  => count($this->items),
+                'pendentes'  => count($pendentes),
+                'persistidos'=> count($upsertData),
+                'attempt'    => $this->attempts(),
+                'modalidade' => $this->modalidade,
             ])) {
                 return;
             }
 
             // Só chega aqui quando a falha é permanente/crítica (não haverá retry).
-            $this->markCyclePageDone($cycleTracker, 0);
+            $this->markCyclePageDone($cycleTracker, count($upsertData) + $jaFeitos);
         }
+    }
+
+    /**
+     * Itens do lote que ainda estão com `documents_fetched_at` nulo.
+     *
+     * Cobre dois caminhos: a retentativa deste próprio lote (que já persistiu
+     * parte dos itens na tentativa anterior) e a sobreposição entre a Fase 2 e
+     * a drenagem de pendentes — a trava por modalidade impede os dois ciclos
+     * ativos ao mesmo tempo, mas não os lotes de um ciclo já morto que ainda
+     * estavam enfileirados quando o ciclo seguinte pegou os mesmos registros.
+     *
+     * @return list<array{numero_controle_pncp: string, orgao_cnpj: string, ano_compra: int, sequencial_compra: int}>
+     */
+    private function itemsAindaPendentes(): array
+    {
+        $jaBuscados = PublicContratation::query()
+            ->whereIn('numero_controle_pncp', array_column($this->items, 'numero_controle_pncp'))
+            ->whereNotNull('documents_fetched_at')
+            ->pluck('numero_controle_pncp')
+            ->all();
+
+        if ($jaBuscados === []) {
+            return array_values($this->items);
+        }
+
+        $jaBuscados = array_flip($jaBuscados);
+
+        return array_values(array_filter(
+            $this->items,
+            fn (array $item) => ! isset($jaBuscados[$item['numero_controle_pncp']])
+        ));
     }
 
     /**
@@ -181,7 +241,7 @@ class ProcessPncpDocumentPageJob implements ShouldQueue
             'lote_size'  => count($this->items),
             'exception'  => get_class($exception),
             'message'    => $exception->getMessage(),
-            'reason'     => 'Lote de documentos esgotou o retryUntil sem conseguir buscar os arquivos. Os registros continuam com documents_fetched_at nulo e serão retentados no próximo ciclo diário.',
+            'reason'     => 'Lote de documentos esgotou o retryUntil sem conseguir buscar os arquivos. Os itens que já tinham sido buscados ficaram persistidos; o que sobrou continua com documents_fetched_at nulo e entra na próxima janela da drenagem contínua.',
         ]);
 
         $this->markCyclePageDone(app(PncpSyncCycleTracker::class), 0);

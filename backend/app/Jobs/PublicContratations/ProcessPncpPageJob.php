@@ -48,7 +48,7 @@ class ProcessPncpPageJob implements ShouldQueue
      */
     public function retryUntil(): DateTimeInterface
     {
-        return now()->addHours((int) config('pncp.retry_until_hours', 6));
+        return now()->addHours((int) config('pncp.retry_until_hours.listagem', 12));
     }
 
     /**
