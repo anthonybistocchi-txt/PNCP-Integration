@@ -4,7 +4,11 @@ use Illuminate\Support\Facades\Schedule;
 
 // 00:45 e não 03:00: às 3h o pool de conexões do PNCP satura (todo mundo
 // agenda no mesmo horário) e as requisições voltam 500 por ~25 minutos.
-Schedule::command('pncp:sync')->dailyAt('00:45');
+//
+// Só seg–sex: no fim de semana o pncp:sync --days=7 (sáb/dom 06:00) já
+// cobre a janela do --days=1. Rodar os dois juntos só disputa o throttle
+// global com o backfill semanal.
+Schedule::command('pncp:sync')->weekdays()->at('00:45');
 
 // Drenagem contínua dos documentos pendentes (documents_fetched_at nulo), sem
 // filtro de data. Deixou de ser "rede de segurança em duas rajadas" e passou a
