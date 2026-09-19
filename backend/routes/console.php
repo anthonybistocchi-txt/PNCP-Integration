@@ -54,10 +54,11 @@ Schedule::command('pncp:listagem-gaps --for-schedule')->dailyAt('23:50');
 // então as duas janelas se sobrepõem em ~5 dias — duas chances independentes
 // de pegar o PNCP saudável, em vez de uma só.
 //
-// 02:00 e não 00:45 (mesmo horário do pncp:sync diário): nos fins de semana o
-// ciclo diário de baixo volume historicamente termina em minutos, então às
-// 02:00 o throttle global já está livre para o backfill sem competir com o
-// ciclo do dia.
+// 06:00 e não 00:45 (mesmo horário do pncp:sync diário): o uniqueId não colide
+// (--days=1 vs --days=7 são intervalos diferentes), mas os dois compartilham
+// o throttle global e o breaker de listagem. Nos fins de semana o ciclo diário
+// costuma fechar em minutos (em dia útil vimos ~01:55); 06:00 deixa folga
+// ampla para a fila esvaziar antes do backfill de 7 dias.
 //
 // `pncp:listagem-gaps` (23:50, todo dia) é o termômetro: se depois de um fim
 // de semana ainda aparecer ciclo `abandoned`/incompleto de sábado ou domingo,
@@ -65,4 +66,4 @@ Schedule::command('pncp:listagem-gaps --for-schedule')->dailyAt('23:50');
 // coube no retryUntil de 12h da listagem, e a janela precisa ser revista.
 Schedule::command('pncp:sync --days=7')
     ->days([0, 6]) // domingo (0) e sábado (6)
-    ->at('02:00');
+    ->at('06:00');
