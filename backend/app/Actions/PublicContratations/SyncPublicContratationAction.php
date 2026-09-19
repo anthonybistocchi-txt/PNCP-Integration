@@ -38,6 +38,11 @@ class SyncPublicContratationAction
 
         try
         {
+            // `documentos` entra só no INSERT (linha nova = []). Não entra no
+            // update: um reprocessamento de listagem (ex.: backfill --days=7)
+            // não pode apagar arquivos que a Fase 2 / drenagem já gravou.
+            // `documents_fetched_at` também fica de fora do update pelo mesmo
+            // motivo — quem mexe nele é só o fluxo de documentos.
             PublicContratation::upsert(
                 $upsertData,
                 ['numero_controle_pncp'],
@@ -57,7 +62,6 @@ class SyncPublicContratationAction
                     'srp',
                     'objeto_compra',
                     'payload_completo',
-                    'documentos',
                 ]
             );
         }

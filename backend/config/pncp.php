@@ -54,21 +54,25 @@ return [
     |
     |     teto × modalidades_com_volume ≤ intervalo × 1.800 req/h
     |
-    | Com intervalo de 20 min o orçamento é de 600 requisições por janela. As
-    | modalidades com volume real são ~4 (6, 8, 9 e 4); as outras voltam
-    | `empty` em milissegundos. 150 × 4 = 600 encaixa no pior caso, e a média
-    | é bem menor: 12.200 documentos/dia ÷ 72 janelas = ~170 por janela.
+    | Com intervalo de 20 min o orçamento teórico é de 600 requisições por
+    | janela. As modalidades com volume real são ~4 (6, 8, 9 e 4); as outras
+    | voltam `empty` em milissegundos. 200 × 4 = 800 passa um pouco do teto
+    | “limpo” — o limitador global serializa o excesso e a janela estica, o
+    | que é aceitável enquanto houver passivo grande (backfill / outage). Se
+    | a fila de documentos começar a empilhar lote morrendo de retryUntil
+    | com o PNCP saudável, baixe este número (não o intervalo).
+    |
+    | Média histórica: ~12.200 documentos/dia ÷ 72 janelas ≈ 170 por janela.
+    | 200 dá folga para drenar passivo além do fluxo do dia
+    | (72 × 200 = 14.400/modalidade/dia).
     |
     | O teto antigo (2.000) era o motivo de a modalidade 6 nunca convergir:
     | 5.292 registros/dia contra 2 execuções × 2.000 = 4.000 de capacidade
     | máxima garantiam passivo crescente de ~1.300/dia, mesmo com 100% de
-    | sucesso. Com 72 janelas × 150 a mesma modalidade tem 10.800 de teto.
-    |
-    | Se aparecer fila represada (lotes morrendo de retryUntil sem o PNCP
-    | estar fora), este é o número para baixar — não o intervalo.
+    | sucesso.
     |
     */
-    'pending_documents_max_per_run' => (int) env('PNCP_PENDING_DOCS_MAX_PER_RUN', 150),
+    'pending_documents_max_per_run' => (int) env('PNCP_PENDING_DOCS_MAX_PER_RUN', 200),
 
     /*
     |--------------------------------------------------------------------------

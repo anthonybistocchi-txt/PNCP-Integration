@@ -104,7 +104,7 @@ class SyncPncpDocumentsJob implements ShouldQueue, ShouldBeUnique
             // drenagem exatamente na modalidade de maior volume. O que passar
             // do teto continua nulo e entra na próxima janela, em ≤20 min.
             ->orderByDesc('data_publicacao_pncp')
-            ->limit((int) config('pncp.pending_documents_max_per_run', 150))
+            ->limit((int) config('pncp.pending_documents_max_per_run', 200))
             ->get()
             ->toArray();
 

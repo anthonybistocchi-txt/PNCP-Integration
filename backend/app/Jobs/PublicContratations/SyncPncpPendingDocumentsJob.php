@@ -95,7 +95,7 @@ class SyncPncpPendingDocumentsJob implements ShouldQueue, ShouldBeUnique
             ->where('codigo_modalidade_contratacao', $this->modalidade)
             ->whereNotNull('sequencial_compra')
             ->orderByDesc('data_publicacao_pncp')
-            ->limit((int) config('pncp.pending_documents_max_per_run', 150))
+            ->limit((int) config('pncp.pending_documents_max_per_run', 200))
             ->get()
             ->toArray();
 
