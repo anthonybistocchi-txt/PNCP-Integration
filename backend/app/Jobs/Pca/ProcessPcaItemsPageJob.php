@@ -59,6 +59,8 @@ class ProcessPcaItemsPageJob implements ShouldQueue
             $circuitBreaker->recordSuccess(PncpCircuitBreaker::SCOPE_PCA);
 
             if (! $response || empty($response->data)) {
+                $this->markCyclePageDone($cycleTracker, 0);
+
                 return;
             }
 
@@ -73,19 +75,23 @@ class ProcessPcaItemsPageJob implements ShouldQueue
                     'cnpj' => $this->cnpj,
                     'ano' => $this->ano,
                     'sequencial' => $this->sequencial,
+                    'page' => $this->pagina,
                 ]);
-                return; // Ou lançar exceção para retry se o mestre ainda não finalizou commit
+                // Plano ainda não commitado pelo mestre: reagenda sem avançar o ciclo.
+                $this->release(30);
+
+                return;
             }
 
             $itemsData = [];
             foreach ($response->data as $item) {
                 $itemsData[] = new PcaItemData(
-                    pcaPlanId: $pcaPlan->id,
-                    numeroItem: $item->numeroItem ?? 0,
-                    categoriaItemPca: $item->categoriaItemPca ?? null,
+                    pcaPlanId: (int) $pcaPlan->id,
+                    numeroItem: (int) ($item->numeroItem ?? 0),
+                    categoriaItemPca: isset($item->categoriaItemPca) ? (int) $item->categoriaItemPca : null,
                     categoriaItemPcaNome: $item->categoriaItemPcaNome ?? null,
-                    catalogoId: $item->catalogoId ?? null,
-                    classificacaoCatalogoId: $item->classificacaoCatalogoId ?? null,
+                    catalogoId: isset($item->catalogoId) ? (int) $item->catalogoId : null,
+                    classificacaoCatalogoId: isset($item->classificacaoCatalogoId) ? (int) $item->classificacaoCatalogoId : null,
                     classificacaoSuperiorCodigo: $item->classificacaoSuperiorCodigo ?? null,
                     classificacaoSuperiorNome: $item->classificacaoSuperiorNome ?? null,
                     pdmCodigo: $item->pdmCodigo ?? null,
@@ -110,20 +116,68 @@ class ProcessPcaItemsPageJob implements ShouldQueue
 
             $upsertAction->handle($itemsData);
 
-            $cycleTracker->markPageDone($this->syncId, count($itemsData));
-
-            if ($cycleTracker->isFinished($this->syncId)) {
-                PncpPcaCiclo::where('sync_id', $this->syncId)->update([
-                    'status' => 'finished',
-                    'finished_at' => now(),
-                    'paginas_completas' => $this->pagina,
-                ]);
-            }
-
+            $this->markCyclePageDone($cycleTracker, count($itemsData));
         } catch (\Throwable $error) {
-            $failureHandler->handle($error, $this, PncpCircuitBreaker::SCOPE_PCA, [
+            // Reagendado (API indisponível ou em pausa): a página ainda vai
+            // rodar, então o contador do ciclo não pode avançar.
+            if ($failureHandler->handle($error, $this, PncpCircuitBreaker::SCOPE_PCA, [
                 'action' => 'ProcessPcaItemsPageJob',
                 'attempt' => $this->attempts(),
+                'cnpj' => $this->cnpj,
+                'ano' => $this->ano,
+                'sequencial' => $this->sequencial,
+                'page' => $this->pagina,
+            ])) {
+                return;
+            }
+
+            // Falha permanente: conta a página no ciclo com 0 itens.
+            $this->markCyclePageDone($cycleTracker, 0);
+        }
+    }
+
+    /**
+     * Incrementa o contador do ciclo. markPageDone devolve o resumo só na
+     * última unidade — não existe isFinished() no tracker.
+     *
+     * @return array{units_completed: int, items_processed: int, total_records: int}|null
+     */
+    private function markCyclePageDone(PncpSyncCycleTracker $cycleTracker, int $itemsProcessed): ?array
+    {
+        $summary = $cycleTracker->markPageDone($this->syncId, $itemsProcessed);
+
+        if ($summary === null) {
+            return null;
+        }
+
+        PncpPcaCiclo::where('sync_id', $this->syncId)->update([
+            'status' => 'finished',
+            'finished_at' => now(),
+            'paginas_completas' => $summary['units_completed'],
+            'items_processados' => $summary['items_processed'],
+        ]);
+
+        return $summary;
+    }
+
+    public function failed(\Throwable $exception): void
+    {
+        Log::error('PNCP_PCA_PAGE_ABANDONED', [
+            'sync_id' => $this->syncId,
+            'cnpj' => $this->cnpj,
+            'ano' => $this->ano,
+            'sequencial' => $this->sequencial,
+            'page' => $this->pagina,
+            'exception' => get_class($exception),
+            'message' => $exception->getMessage(),
+        ]);
+
+        $summary = $this->markCyclePageDone(app(PncpSyncCycleTracker::class), 0);
+
+        if ($summary === null) {
+            PncpPcaCiclo::where('sync_id', $this->syncId)->update([
+                'status' => 'abandoned',
+                'finished_at' => now(),
             ]);
         }
     }
