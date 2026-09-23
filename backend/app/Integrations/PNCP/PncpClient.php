@@ -70,23 +70,48 @@ class PncpClient
 
     /**
      * Busca as unidades de um órgão que possuem PCA no ano especificado.
+     * O endpoint pagina (default 10); agregamos todas as páginas aqui.
+     *
+     * @return list<array<string, mixed>>
      */
     public function getPcaUnidades(string $cnpj, int $ano): array
     {
         $url = $this->baseUrlDocumentos . "/{$cnpj}/pca/{$ano}/consolidado/unidades";
+        $tamanhoPagina = 50;
+        $pagina = 1;
+        $todas = [];
 
-        $response = $this->request($url, [], (int) config('pncp.http.timeout'));
+        while (true) {
+            $response = $this->request($url, [
+                'pagina' => $pagina,
+                'tamanhoPagina' => $tamanhoPagina,
+            ], (int) config('pncp.http.timeout'));
 
-        if ($response->successful()) {
-            $unidades = json_decode($response->body(), true);
-            return is_array($unidades) ? $unidades : [];
+            if ($response->notFound()) {
+                return $todas;
+            }
+
+            if (! $response->successful()) {
+                $this->throwForStatus($response);
+            }
+
+            $chunk = json_decode($response->body(), true);
+            if (! is_array($chunk) || $chunk === []) {
+                break;
+            }
+
+            foreach ($chunk as $item) {
+                $todas[] = $item;
+            }
+
+            if (count($chunk) < $tamanhoPagina) {
+                break;
+            }
+
+            $pagina++;
         }
 
-        if ($response->notFound()) {
-            return [];
-        }
-
-        $this->throwForStatus($response);
+        return $todas;
     }
 
     /**

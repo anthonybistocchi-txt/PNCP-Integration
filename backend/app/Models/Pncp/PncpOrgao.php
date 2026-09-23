@@ -11,8 +11,8 @@ class PncpOrgao extends Model
     protected $fillable = [
         'cnpj',
         'razao_social',
-        'poder_id',
-        'esfera_id',
+        'poder',
+        'esfera',
         'ativo',
         'importado_de',
     ];

@@ -14,7 +14,7 @@ return new class extends Migration
         Schema::create('pncp_pca_ciclos', function (Blueprint $table) {
             $table->id();
             $table->uuid('sync_id')->unique()->nullable();
-            $table->string('cnpj_orgao', 18);
+            $table->string('cnpj_orgao', 14);
             $table->smallInteger('ano_pca');
             $table->integer('sequencial_pca')->nullable();
             $table->integer('total_anunciado')->default(0);

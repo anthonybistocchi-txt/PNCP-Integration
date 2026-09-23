@@ -10,13 +10,14 @@ class PncpOrgaoUnidade extends Model
 
     protected $fillable = [
         'cnpj_orgao',
+        'ano_pca',
         'codigo_unidade',
         'nome_unidade',
         'uf_sigla',
         'codigo_ibge',
         'nome_municipio',
-        'poder_id',
-        'esfera_id',
+        'poder',
+        'esfera',
         'ativo',
         'payload_completo',
     ];

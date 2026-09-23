@@ -2,23 +2,29 @@
 
 namespace App\Console\Commands;
 
-use App\Integrations\PNCP\PncpClient;
 use App\Jobs\Pncp\DiscoverPncpUnidadesJob;
 use App\Models\Pncp\PncpOrgao;
 use App\Models\Pncp\PncpOrgaoUnidade;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\Log;
 
+/**
+ * Enriquecimento opcional: inventário de unidades em pncp_orgao_unidades.
+ *
+ * Não faz parte do pipeline diário de PCA (`import-orgaos` → `sync-pca`).
+ * O SyncPcaDataJob já recebe unidadeOrgao via getPcaConsolidado. Use este
+ * comando sob demanda (ou com --force) quando precisar cruzar PCA ↔
+ * contratação ↔ unidade fora do que já está em pca_plans.
+ */
 class DiscoverPncpUnidadesCommand extends Command
 {
-    protected $signature = 'pncp:discover-unidades 
+    protected $signature = 'pncp:discover-unidades
                             {--cnpj= : Processar apenas este CNPJ}
                             {--ano= : Ano para buscar unidades (padrão: ano atual)}
                             {--force : Reprocessa mesmo os que já têm unidades registradas}';
-                            
-    protected $description = 'Descobre e salva unidades administrativas dos órgãos monitorados';
 
-    public function handle(PncpClient $client): int
+    protected $description = 'Enriquecimento opcional: descobre unidades administrativas dos órgãos (não é pré-requisito do sync PCA)';
+
+    public function handle(): int
     {
         $ano = $this->option('ano') ? (int) $this->option('ano') : now()->year;
         $cnpjEspecifico = $this->option('cnpj');
@@ -32,14 +38,16 @@ class DiscoverPncpUnidadesCommand extends Command
 
         if ($orgaos->isEmpty()) {
             $this->warn('Nenhum órgão ativo encontrado para processar.');
+
             return self::SUCCESS;
         }
 
         $this->info("Iniciando descoberta de unidades para {$orgaos->count()} órgão(s). Ano: {$ano}");
 
         foreach ($orgaos as $orgao) {
-            if (!$this->option('force') && PncpOrgaoUnidade::where('cnpj_orgao', $orgao->cnpj)->exists()) {
-                $this->line("Pulando CNPJ {$orgao->cnpj} (já possui unidades e --force não foi usado).");
+            if (! $this->option('force') && PncpOrgaoUnidade::where('cnpj_orgao', $orgao->cnpj)->where('ano_pca', $ano)->exists()) {
+                $this->line("Pulando CNPJ {$orgao->cnpj} (já possui unidades em {$ano} e --force não foi usado).");
+
                 continue;
             }
 
@@ -48,6 +56,7 @@ class DiscoverPncpUnidadesCommand extends Command
         }
 
         $this->info('Processo concluído.');
+
         return self::SUCCESS;
     }
 }

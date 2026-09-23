@@ -13,7 +13,7 @@ return new class extends Migration
     {
         Schema::create('pca_plans', function (Blueprint $table) {
             $table->id();
-            $table->string('cnpj_orgao', 18);
+            $table->string('cnpj_orgao', 14);
             $table->smallInteger('ano_pca')->index();
             $table->integer('sequencial_pca');
             $table->string('codigo_unidade', 20)->nullable();
