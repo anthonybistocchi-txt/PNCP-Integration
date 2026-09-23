@@ -5,10 +5,9 @@ use Illuminate\Support\Facades\Schedule;
 // 00:45 e não 03:00: às 3h o pool de conexões do PNCP satura (todo mundo
 // agenda no mesmo horário) e as requisições voltam 500 por ~25 minutos.
 //
-// Só seg–sex: no fim de semana o pncp:sync --days=7 (sáb/dom 06:00) já
-// cobre a janela do --days=1. Rodar os dois juntos só disputa o throttle
-// global com o backfill semanal.
-Schedule::command('pncp:sync')->weekdays()->at('00:45');
+// listagem diária; gaps da semana são
+// reprocessados por pncp:sync-listagem-faltantes (sáb/dom 02:00).
+Schedule::command('pncp:sync')->dailyAt('00:45');
 
 // Drenagem contínua dos documentos pendentes (documents_fetched_at nulo), sem
 // filtro de data. Deixou de ser "rede de segurança em duas rajadas" e passou a
@@ -48,35 +47,23 @@ Schedule::command('pncp:monitorar-documentos-pendentes')->dailyAt('23:45');
 // incompleto. Sempre exit 0 — não polui o schedule:run com stacktrace.
 Schedule::command('pncp:listagem-gaps --for-schedule')->dailyAt('23:50');
 
-// Backfill semanal de listagem. Não perseguimos 100% todo dia — o PNCP não
-// depende da gente — então em vez de retry automático por gap, sábado e
-// domingo (tráfego baixo, PNCP mais saudável) relistam os últimos 7 dias
-// inteiros. O upsert é idempotente: reprocessar o que já convergiu só custa a
-// chamada HTTP, e o que ficou incompleto durante a semana é pego aqui.
-//
-// Sábado e domingo, os dois: cada --days=7 conta a partir da data de execução,
-// então as duas janelas se sobrepõem em ~5 dias — duas chances independentes
-// de pegar o PNCP saudável, em vez de uma só.
-//
-// 06:00 e não 00:45 (mesmo horário do pncp:sync diário): o uniqueId não colide
-// (--days=1 vs --days=7 são intervalos diferentes), mas os dois compartilham
-// o throttle global e o breaker de listagem. Nos fins de semana o ciclo diário
-// costuma fechar em minutos (em dia útil vimos ~01:55); 06:00 deixa folga
-// ampla para a fila esvaziar antes do backfill de 7 dias.
-//
-// `pncp:listagem-gaps` (23:50, todo dia) é o termômetro: se depois de um fim
-// de semana ainda aparecer ciclo `abandoned`/incompleto de sábado ou domingo,
-// é sinal de que 7 dias de alguma modalidade grande (ex.: 6 — Pregão) não
-// coube no retryUntil de 12h da listagem, e a janela precisa ser revista.
-Schedule::command('pncp:sync --days=7')
-    ->days([0, 6]) // domingo (0) e sábado (6)
-    ->at('02:00');
-
-// Comando de verificação de sincronização da listagem, caso total anunciado - items processados != 0 
-// fazemos o fetch daquele dia novamente no sabado e domingo para trazer os itens que faltam
+// Reprocessa só o que faltou: ciclos em gap em pncp_listagem_ciclos
+// (abandoned / finished abaixo do anunciado / started além do retryUntil).
+// Substitui o antigo backfill cego `pncp:sync --days=7` — não relista a
+// janela inteira, só dispara SyncPncpDataJob nos intervalos incompletos.
+// Sábado e domingo (tráfego baixo), duas chances na semana.
 Schedule::command('pncp:sync-listagem-faltantes')
     ->days([0, 6]) // domingo (0) e sábado (6)
     ->at('02:00');
+
+// Allowlist de órgãos para PCA: before do sync, para o mestre não rodar
+// num conjunto vazio/velho. Zero HTTP — só DISTINCT em public_contratations
+// + enriquecimento de razao_social/poder/esfera do payload.
+//
+// `pncp:discover-unidades` NÃO entra no schedule: é enriquecimento opcional
+// (inventário em pncp_orgao_unidades). O sync de PCA usa getPcaConsolidado
+// e já traz unidadeOrgao no plano — não depende dessa tabela.
+Schedule::command('pncp:import-orgaos')->dailyAt('03:15');
 
 // Sincronização diária de PCA (horário diferente para não competir com listagem das 00:45)
 Schedule::command('pncp:sync-pca')->dailyAt('03:30');

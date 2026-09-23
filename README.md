@@ -1,6 +1,6 @@
 # PNCP Integration - Backend
 
-Backend da aplicação **PNCP Integration**: API de consulta de licitações e contratos públicos, com sincronização assíncrona da API do Portal Nacional de Contratações Públicas (PNCP).
+Backend da aplicação **PNCP Integration**: API de consulta de licitações/contratos públicos e de itens de PCA (Plano de Contratações Anual), com sincronização assíncrona da API do Portal Nacional de Contratações Públicas (PNCP).
 
 ## Arquitetura
 
@@ -12,55 +12,86 @@ Focado em latência baixa.
 
 - O frontend lê apenas o PostgreSQL local (fonte de verdade).
 - Rotas autenticadas usam o middleware `auth.api` (header `API_KEY` ou Bearer token do usuário).
-- Validação via FormRequest (`ListPublicContratationsRequest`), conversão para DTO, Service e Repository.
+- Validação via FormRequest → DTO → Service → Repository.
 - A leitura **nunca** chama a API do governo.
 
 ### 2. Fluxo de Sincronização (assíncrono / background)
 
-Focado em ingestão em volume.
+Focado em ingestão em volume. Há dois domínios: **contratações** e **PCA**.
 
-#### Fase 1 — Listagem
+---
 
-1. O scheduler dispara `pncp:sync` diariamente às **00:45**.
+#### Contratações — Fase 1 (Listagem)
+
+1. O scheduler dispara `pncp:sync` em dias úteis às **00:45**.
 2. O comando enfileira um `SyncPncpDataJob` por modalidade (1–10 por padrão).
 3. O mestre consulta o PNCP só para descobrir o total de páginas e faz fan-out de `ProcessPncpPageJob` (50 itens por página).
 4. Cada operário faz upsert em massa via `SyncPublicContratationAction`.
 5. Cada ciclo grava uma linha em `pncp_listagem_ciclos` (anunciado no START, processado no FINISH). Gaps incompletos aparecem em `pncp:listagem-gaps`.
 
-Backfill semanal automático: não perseguimos 100% todo dia (o PNCP não depende
-da gente). Sábado e domingo às 02:00, `pncp:sync --days=7` relista os últimos 7
-dias inteiros, aproveitando o tráfego baixo do fim de semana. É idempotente
-(upsert), então relistar o que já convergiu só custa a chamada HTTP — o que
-ficou incompleto durante a semana é pego aí. As duas janelas (sábado e
-domingo) se sobrepõem em ~5 dias, dando duas chances de pegar o PNCP saudável.
+**Repescagem semanal de gaps:** sábado e domingo às **02:00**, `pncp:sync-listagem-faltantes` reprocessa só ciclos incompletos em `pncp_listagem_ciclos` (dispara `SyncPncpDataJob` por intervalo/modalidade). Substitui o antigo backfill cego `pncp:sync --days=7`.
 
-Backfill manual de um intervalo específico (datas absolutas, depois que a
-listagem do dia tiver fechado — útil se o backfill semanal ainda não rodou ou
-se um gap precisa ser corrigido antes do próximo fim de semana):
+Backfill manual de um intervalo específico (ainda disponível via `--days` / datas absolutas):
 
 ```bash
 php artisan pncp:sync --data-inicial=20260914 --data-final=20260915 --modalidades=4,6,8,9
 php artisan pncp:listagem-gaps
+php artisan pncp:sync-listagem-faltantes
 ```
 
-Critério de gap: `abandoned`, `finished` com `items_processados < total_anunciado`, ou `started` além de `PNCP_RETRY_UNTIL_HOURS_LISTAGEM` (12h). Não usar contagem de `INSERT` — o upsert atualiza registros já existentes. `pncp:listagem-gaps` roda todo dia às 23:50 e é o termômetro para saber se o backfill semanal está de fato fechando os buracos.
-#### Fase 2 — Documentos (automática)
+Critério de gap: `abandoned`, `finished` com `items_processados < total_anunciado`, ou `started` além de `PNCP_RETRY_UNTIL_HOURS_LISTAGEM` (12h). Não usar contagem de `INSERT` — o upsert atualiza registros já existentes. `pncp:listagem-gaps` roda todo dia às 23:50.
+
+#### Contratações — Fase 2 (Documentos)
 
 Ao terminar a listagem de uma modalidade, o sistema dispara `SyncPncpDocumentsJob`, que busca arquivos (`/arquivos`) dos registros que o ciclo tocou (`documents_fetched_at IS NULL` e `updated_at >= início do ciclo`) e distribui lotes em `ProcessPncpDocumentPageJob`.
 
-#### Drenagem de pendentes (caminho principal dos documentos)
+#### Contratações — Drenagem de pendentes
 
-`pncp:sync-documentos-pendentes` roda **a cada 20 minutos** e busca registros com `documents_fetched_at` nulo de qualquer data (teto por modalidade e por janela, mais recentes primeiro).
+`pncp:sync-documentos-pendentes` roda **a cada 20 minutos** e busca registros com `documents_fetched_at` nulo de qualquer data (teto por modalidade e por janela). É o caminho principal dos documentos. Detalhes do dimensionamento em `config/pncp.php`.
 
-Era uma rede de segurança em duas rajadas (09:00 e 21:00) e passou a ser o caminho principal: com ~12,2 mil registros/dia num dia útil e um limitador de 1.800 req/h, concentrar os documentos em duas janelas fazia a fase competir com a listagem pelo mesmo orçamento e derrubar as duas. A conta que amarra teto, intervalo e limitador está em `config/pncp.php`.
+---
+
+#### PCA — Órgãos, unidades e sync
+
+Pipeline diário:
+
+1. **03:15** — `pncp:import-orgaos`: allowlist em `pncp_orgaos` a partir dos CNPJs distintos de `public_contratations`. Zero HTTP. Preenche `razao_social`, `poder` e `esfera` de `payload_completo->orgaoEntidade` (letras: poder `E|L|J|M`, esfera `F|E|M`). Registros `importado_de = manual` não são sobrescritos; `ativo` também não.
+2. **03:30** — `pncp:sync-pca`: para cada órgão ativo, despacha `SyncPcaDataJob` → `SyncPcaItemsJob` → `ProcessPcaItemsPageJob`. Persiste em `pca_plans` / `pca_items` e audita em `pncp_pca_ciclos`.
+
+**`pncp:discover-unidades` não entra no schedule.** É enriquecimento opcional (inventário em `pncp_orgao_unidades`). O sync de PCA não depende dessa tabela.
+
+```bash
+# Allowlist (também roda sozinha no schedule)
+php artisan pncp:import-orgaos
+php artisan pncp:import-orgaos --dry-run
+
+# Sync PCA
+php artisan pncp:sync-pca
+php artisan pncp:sync-pca --ano=2026 --cnpj=00394429000100
+
+# Unidades (opcional, sob demanda)
+php artisan pncp:discover-unidades
+php artisan pncp:discover-unidades --ano=2026 --force
+```
+
+##### De onde vêm os campos de `pncp_orgao_unidades`
+
+| Campo | Origem |
+|-------|--------|
+| `codigo_unidade`, `nome_unidade`, `poder`, `esfera`, `ano_pca` | API `GET .../pca/{ano}/consolidado/unidades` (paginada) |
+| `uf_sigla`, `codigo_ibge`, `nome_municipio` | **Enriquecimento local** de `public_contratations.payload_completo->unidadeOrgao` (mesmo CNPJ + `codigoUnidade`). A API de unidades **não** envia geo. Se a unidade nunca apareceu numa contratação, ficam `null`. |
+
+Unique: `(cnpj_orgao, ano_pca, codigo_unidade)`. FK para `pncp_orgaos.cnpj`.
+
+---
 
 #### Resiliência
 
-- **Retry por tempo**: jobs usam `retryUntil`, separado por escopo — **12h** para a listagem (`PNCP_RETRY_UNTIL_HOURS_LISTAGEM`), porque a página perdida não é repescada por nenhum ciclo futuro, e **2h** para documentos (`PNCP_RETRY_UNTIL_HOURS_DOCUMENTOS`), porque o lote abandonado volta na janela seguinte da drenagem.
-- **Progresso parcial**: um lote de documentos persiste o que já buscou antes de voltar para a fila, e a retentativa só busca o que ainda está nulo — sem isso, uma falha em qualquer item descartava o lote inteiro e a retentativa refazia todas as chamadas.
+- **Retry por tempo**: jobs usam `retryUntil` — **12h** listagem (`PNCP_RETRY_UNTIL_HOURS_LISTAGEM`), **2h** documentos (`PNCP_RETRY_UNTIL_HOURS_DOCUMENTOS`).
+- **Progresso parcial** nos lotes de documentos.
 - **Throttle global**: intervalo mínimo entre requisições ao PNCP (`PNCP_MIN_INTERVAL_SECONDS`), compartilhado por todos os workers.
-- **Circuit breaker** (Redis): pausa escalonada em 429 e em falhas consecutivas 5xx/timeout; escopos separados para listagem e documentos.
-- **Logs estruturados**: eventos nomeados (`PNCP_LISTAGEM_*`, `PNCP_DOCUMENTOS_*`, `PNCP_BREAKER_*`, etc.) em `storage/logs/laravel.log`. Progresso da fila também aparece no stdout dos containers (`docker compose logs worker`).
+- **Circuit breaker** (Redis): escopos separados — `listagem`, `documentos` e `pca`.
+- **Logs estruturados**: `PNCP_LISTAGEM_*`, `PNCP_DOCUMENTOS_*`, `PNCP_PCA_*`, `PNCP_UNIDADES_*`, `PNCP_BREAKER_*` em `storage/logs/laravel.log`.
 
 ## Stack
 
@@ -72,7 +103,7 @@ Era uma rede de segurança em duas rajadas (09:00 e 21:00) e passou a ser o cami
 
 ## Como rodar
 
-Os arquivos de compose ficam na **raiz do monorepo** (`../` a partir desta pasta), não dentro de `backend/`.
+Os arquivos de compose ficam na **raiz do monorepo** (`../` a partir de `backend/`), não dentro de `backend/`.
 
 ### 1. Variáveis de ambiente
 
@@ -113,8 +144,12 @@ docker compose exec php php artisan pncp:sync
 # Só algumas modalidades / janela maior
 docker compose exec php php artisan pncp:sync --days=30 --modalidades=6,8
 
-# Varredura de documentos pendentes
+# Documentos pendentes
 docker compose exec php php artisan pncp:sync-documentos-pendentes
+
+# PCA
+docker compose exec php php artisan pncp:import-orgaos
+docker compose exec php php artisan pncp:sync-pca
 ```
 
 Não é necessário subir `queue:work` à mão: os workers já sobem com o compose.
@@ -123,9 +158,15 @@ Não é necessário subir `queue:work` à mão: os workers já sobem com o compo
 
 | Horário | Comando | Função |
 |--------|---------|--------|
-| 04:30 | `pncp:sync` | Listagem diária + disparo automático da Fase 2 |
-| 09:00 | `pncp:sync-documentos-pendentes` | Drena passivo de documentos |
-| 21:00 | `pncp:sync-documentos-pendentes` | Segunda chance no dia |
+| seg–sex 00:45 | `pncp:sync` | Listagem diária + disparo automático da Fase 2 |
+| `*/20` | `pncp:sync-documentos-pendentes` | Drenagem contínua de documentos |
+| diário 23:45 | `pncp:monitorar-documentos-pendentes` | Alerta de backlog de documentos |
+| diário 23:50 | `pncp:listagem-gaps --for-schedule` | Termômetro de gaps de listagem |
+| sáb/dom 02:00 | `pncp:sync-listagem-faltantes` | Reprocessa ciclos incompletos de listagem |
+| diário 03:15 | `pncp:import-orgaos` | Atualiza allowlist de órgãos (PCA) |
+| diário 03:30 | `pncp:sync-pca` | Sincroniza PCA dos órgãos ativos |
+
+`pncp:discover-unidades` **não** está agendado.
 
 ## Endpoints da API
 
@@ -228,22 +269,37 @@ Contratações relevantes ao usuário (modo include), com `cursor` e `limit` opc
 
 Idem, modo both (include + exclude).
 
+#### PCA — `/api/v1/pca`
+
+##### `QUERY` / `GET /api/v1/pca/items`
+
+Lista itens de PCA do banco local (não chama o PNCP).
+
+**Filtros (query/body):** `ano`, `cnpj`, `categoriaItem`, `uf`, `municipio`, `search`, `cursor`, `limit` (máx. 50).
+
+Paginação por cursor. Resposta: `{ "data": [...], "next_cursor": "..." }`.
+
 ## Tabelas de domínio (PNCP)
 
-### `poderId`
+### `poder` / `poderId` (letra, não ID numérico)
 
 - `E`: Executivo
 - `L`: Legislativo
 - `J`: Judiciário
 - `N`: Não se aplica
+- `M`: Ministério Público (quando aplicável na fonte)
 
-### `esferaId`
+Nas tabelas `pncp_orgaos` e `pncp_orgao_unidades` a coluna se chama **`poder`**. Na API de filtros de contratos o parâmetro continua `poderId` (legado do payload PNCP).
+
+### `esfera` / `esferaId` (letra, não ID numérico)
 
 - `F`: Federal
 - `E`: Estadual
 - `M`: Municipal
 - `D`: Distrital (DF)
 - `N`: Não se aplica
+
+Nas tabelas `pncp_orgaos` e `pncp_orgao_unidades` a coluna se chama **`esfera`**.
 
 ### `situacaoCompraId`
 
