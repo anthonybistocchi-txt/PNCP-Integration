@@ -70,9 +70,6 @@ Schedule::command('pncp:listagem-gaps --for-schedule')->dailyAt('23:50');
 // coube no retryUntil de 12h da listagem, e a janela precisa ser revista.
 Schedule::command('pncp:sync --days=7')
     ->days([0, 6]) // domingo (0) e sábado (6)
-<<<<<<< Updated upstream
-    ->at('06:00');
-=======
     ->at('02:00');
 
 // Comando de verificação de sincronização da listagem, caso total anunciado - items processados != 0 
@@ -80,4 +77,6 @@ Schedule::command('pncp:sync --days=7')
 Schedule::command('pncp:sync-listagem-faltantes')
     ->days([0, 6]) // domingo (0) e sábado (6)
     ->at('02:00');
->>>>>>> Stashed changes
+
+// Sincronização diária de PCA (horário diferente para não competir com listagem das 00:45)
+Schedule::command('pncp:sync-pca')->dailyAt('03:30');

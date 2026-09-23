@@ -29,6 +29,7 @@ class PncpCircuitBreaker
 {
     public const SCOPE_LISTAGEM   = 'listagem';
     public const SCOPE_DOCUMENTOS = 'documentos';
+    public const SCOPE_PCA        = 'pca';
 
     private const KEY_OPEN_UNTIL        = 'open_until';
     private const KEY_FAILURES          = 'failures';

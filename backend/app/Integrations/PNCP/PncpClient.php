@@ -69,6 +69,89 @@ class PncpClient
     }
 
     /**
+     * Busca as unidades de um órgão que possuem PCA no ano especificado.
+     */
+    public function getPcaUnidades(string $cnpj, int $ano): array
+    {
+        $url = $this->baseUrlDocumentos . "/{$cnpj}/pca/{$ano}/consolidado/unidades";
+
+        $response = $this->request($url, [], (int) config('pncp.http.timeout'));
+
+        if ($response->successful()) {
+            $unidades = json_decode($response->body(), true);
+            return is_array($unidades) ? $unidades : [];
+        }
+
+        if ($response->notFound()) {
+            return [];
+        }
+
+        $this->throwForStatus($response);
+    }
+
+    /**
+     * Busca a lista consolidada de PCAs de um órgão no ano especificado.
+     */
+    public function getPcaConsolidado(string $cnpj, int $ano): array
+    {
+        $url = $this->baseUrlDocumentos . "/{$cnpj}/pca/{$ano}/consolidado";
+
+        $response = $this->request($url, [], (int) config('pncp.http.timeout'));
+
+        if ($response->successful()) {
+            $pcas = json_decode($response->body(), true);
+            return is_array($pcas) ? $pcas : [];
+        }
+
+        if ($response->notFound()) {
+            return [];
+        }
+
+        $this->throwForStatus($response);
+    }
+
+    /**
+     * Busca os itens de um PCA específico (por sequencial).
+     */
+    public function getPcaItens(string $cnpj, int $ano, int $sequencial, array $params = []): ?object
+    {
+        $url = $this->baseUrlDocumentos . "/{$cnpj}/pca/{$ano}/{$sequencial}/itens";
+
+        $response = $this->request($url, $params, (int) config('pncp.http.timeout'));
+
+        if ($response->successful()) {
+            return json_decode($response->body());
+        }
+
+        if ($response->notFound()) {
+            return null;
+        }
+
+        $this->throwForStatus($response);
+    }
+
+    /**
+     * Busca o valor por categoria de item de um PCA.
+     */
+    public function getPcaValorCategoria(string $cnpj, int $ano, int $sequencial): array
+    {
+        $url = $this->baseUrlDocumentos . "/{$cnpj}/pca/{$ano}/{$sequencial}/valorcategoriaitem";
+
+        $response = $this->request($url, [], (int) config('pncp.http.timeout'));
+
+        if ($response->successful()) {
+            $valores = json_decode($response->body(), true);
+            return is_array($valores) ? $valores : [];
+        }
+
+        if ($response->notFound()) {
+            return [];
+        }
+
+        $this->throwForStatus($response);
+    }
+
+    /**
      * Executa a requisição respeitando um intervalo mínimo entre chamadas ao
      * PNCP. O limite é compartilhado entre todos os workers e cobre os dois
      * endpoints (listagem e documentos), porque o WAF do PNCP demonstrou
