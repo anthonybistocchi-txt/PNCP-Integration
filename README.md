@@ -23,7 +23,7 @@ Focado em ingestão em volume. Há dois domínios: **contratações** e **PCA**.
 
 #### Contratações — Fase 1 (Listagem)
 
-1. O scheduler dispara `pncp:sync` em dias úteis às **00:45**.
+1. O scheduler dispara `pncp:sync` todos os dias às **00:45**.
 2. O comando enfileira um `SyncPncpDataJob` por modalidade (1–10 por padrão).
 3. O mestre consulta o PNCP só para descobrir o total de páginas e faz fan-out de `ProcessPncpPageJob` (50 itens por página).
 4. Cada operário faz upsert em massa via `SyncPublicContratationAction`.
