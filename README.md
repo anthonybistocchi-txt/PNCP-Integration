@@ -158,7 +158,7 @@ Não é necessário subir `queue:work` à mão: os workers já sobem com o compo
 
 | Horário | Comando | Função |
 |--------|---------|--------|
-| seg–sex 00:45 | `pncp:sync` | Listagem diária + disparo automático da Fase 2 |
+| diário 00:45 | `pncp:sync` | Listagem diária + disparo automático da Fase 2 |
 | `*/20` | `pncp:sync-documentos-pendentes` | Drenagem contínua de documentos |
 | diário 23:45 | `pncp:monitorar-documentos-pendentes` | Alerta de backlog de documentos |
 | diário 23:50 | `pncp:listagem-gaps --for-schedule` | Termômetro de gaps de listagem |
