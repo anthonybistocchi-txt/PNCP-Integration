@@ -193,7 +193,7 @@ class ProcessPncpPageJob implements ShouldQueue
             'page'       => $this->pagina,
             'exception'  => get_class($exception),
             'message'    => $exception->getMessage(),
-            'reason'     => 'Página de listagem esgotou o retryUntil. Se o ciclo não fechar pelas demais páginas, o intervalo fica incompleto e aparece em pncp:listagem-gaps.',
+            'reason'     => 'Página de listagem esgotou o retryUntil. Se o ciclo não fechar pelas demais páginas, o intervalo fica incompleto em pncp_listagem_ciclos.',
         ]);
 
         $summary = $this->markCyclePageDone(

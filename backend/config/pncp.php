@@ -96,25 +96,6 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Limiar de alerta do passivo de documentos pendentes
-    |--------------------------------------------------------------------------
-    |
-    | Usado por `pncp:monitorar-documentos-pendentes` (agendado às 23:45).
-    | Se uma modalidade ainda tiver mais que isso de `documents_fetched_at
-    | IS NULL` a essa hora, a drenagem não está acompanhando o fluxo do dia.
-    |
-    | 3.000 fazia sentido quando o teto era 2.000 por rajada: era o limiar
-    | acima do qual uma única execução não conseguia mais reverter o passivo.
-    | Com drenagem contínua a expectativa muda — às 23:45 o passivo deveria
-    | estar perto de zero, porque a última janela rodou há no máximo 20 min.
-    | 1.000 ainda dá folga para um dia de PNCP ruim sem virar alarme falso,
-    | mas passa a acusar estagnação muito mais cedo que antes.
-    |
-    */
-    'pending_documents_alert_threshold' => (int) env('PNCP_PENDING_DOCS_ALERT_THRESHOLD', 1000),
-
-    /*
-    |--------------------------------------------------------------------------
     | Timeouts e orçamento de retentativa HTTP
     |--------------------------------------------------------------------------
     |

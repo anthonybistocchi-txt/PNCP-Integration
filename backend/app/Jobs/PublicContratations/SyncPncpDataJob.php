@@ -187,7 +187,7 @@ class SyncPncpDataJob implements ShouldQueue, ShouldBeUnique
 
     /**
      * Mestre descartado (retryUntil). Se o START já tinha sido gravado e o
-     * ciclo não fechou, marca abandoned para o pncp:listagem-gaps enxergar.
+     * ciclo não fechou, marca abandoned para ficar queryável em pncp_listagem_ciclos.
      */
     public function failed(\Throwable $exception): void
     {

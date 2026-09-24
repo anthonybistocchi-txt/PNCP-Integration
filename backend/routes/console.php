@@ -33,20 +33,6 @@ Schedule::command('pncp:sync')->dailyAt('00:45');
 // versão do Laravel (só every{Five,Ten,Fifteen,Thirty}Minutes).
 Schedule::command('pncp:sync-documentos-pendentes')->cron('*/20 * * * *');
 
-// Fotografa o passivo por modalidade e loga alerta (PNCP_PENDING_DOCS_BACKLOG_ALERTA)
-// se alguma modalidade ficar acima do limiar. Não corrige nada sozinho — é o
-// sinal de que a drenagem parou de acompanhar o fluxo daquela modalidade.
-//
-// Com a drenagem contínua a leitura das 23:45 fica mais dura de propósito: a
-// última janela rodou há no máximo 20 min, então o passivo a essa hora deveria
-// estar perto de zero, e não "ainda esvaziando" como nos ~3h que a rajada das
-// 21h levava.
-Schedule::command('pncp:monitorar-documentos-pendentes')->dailyAt('23:45');
-
-// Gaps de listagem (pncp_listagem_ciclos): só loga WARNING se houver ciclo
-// incompleto. Sempre exit 0 — não polui o schedule:run com stacktrace.
-Schedule::command('pncp:listagem-gaps --for-schedule')->dailyAt('23:50');
-
 // Reprocessa só o que faltou: ciclos em gap em pncp_listagem_ciclos
 // (abandoned / finished abaixo do anunciado / started além do retryUntil).
 // Substitui o antigo backfill cego `pncp:sync --days=7` — não relista a
@@ -63,7 +49,8 @@ Schedule::command('pncp:sync-listagem-faltantes')
 // `pncp:discover-unidades` NÃO entra no schedule: é enriquecimento opcional
 // (inventário em pncp_orgao_unidades). O sync de PCA usa getPcaConsolidado
 // e já traz unidadeOrgao no plano — não depende dessa tabela.
-Schedule::command('pncp:import-orgaos')->dailyAt('03:15');
+Schedule::command('pncp:import-orgaos')->dailyAt('15:00');
+Schedule::command('pncp:discover-unidades')->dailyAt('16:00');
 
 // Sincronização diária de PCA (horário diferente para não competir com listagem das 00:45)
-Schedule::command('pncp:sync-pca')->dailyAt('03:30');
+Schedule::command('pncp:sync-pca')->dailyAt('12:30');

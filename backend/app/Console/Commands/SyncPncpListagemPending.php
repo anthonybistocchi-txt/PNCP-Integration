@@ -11,7 +11,7 @@ use Illuminate\Support\Collection;
 /**
  * Reprocessa gaps de listagem (pncp_listagem_ciclos): abandoned, finished abaixo
  * do anunciado, ou started além do retryUntil. Complementa o termômetro
- * pncp:listagem-gaps disparando SyncPncpDataJob por intervalo/modalidade.
+ * pncp_listagem_ciclos disparando SyncPncpDataJob por intervalo/modalidade.
  */
 class SyncPncpListagemPending extends Command
 {
