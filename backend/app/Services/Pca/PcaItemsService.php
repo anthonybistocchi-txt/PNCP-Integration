@@ -2,6 +2,7 @@
 
 namespace App\Services\Pca;
 
+use App\DTOs\Paginate\PaginatedResultDTO;
 use App\DTOs\Pca\ListPcaItemsDTO;
 use App\Repositories\Pca\PcaItemRepository;
 
@@ -11,7 +12,7 @@ class PcaItemsService
         private PcaItemRepository $repository
     ) {}
 
-    public function list(ListPcaItemsDTO $dto): array
+    public function list(ListPcaItemsDTO $dto): PaginatedResultDTO
     {
         return $this->repository->list($dto);
     }

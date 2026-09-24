@@ -63,24 +63,24 @@ class DiscoverPncpUnidadesJob implements ShouldQueue
 
             $unidadesData = [];
             foreach ($unidades as $unidade) {
-                $codigoUnidade = (string) ($unidade['codigoUnidade'] ?? '');
+                $codigoUnidade = (string) ($unidade->codigoUnidade ?? '');
                 $geo = $geoByCodigo->get($codigoUnidade);
 
                 $unidadesData[] = new PncpOrgaoUnidadeData(
                     cnpjOrgao: $this->cnpj,
                     anoPca: $this->ano,
                     codigoUnidade: $codigoUnidade,
-                    nomeUnidade: $unidade['nomeUnidade'] ?? null,
-                    ufSigla: $unidade['ufSigla'] ?? $geo?->uf_sigla,
+                    nomeUnidade: $unidade->nomeUnidade ?? null,
+                    ufSigla: $unidade->ufSigla ?? $geo?->uf_sigla,
                     codigoIbge: $this->intOrNull(
-                        $unidade['codigoIbge'] ?? $geo?->codigo_ibge ?? null
+                        $unidade->codigoIbge ?? $geo?->codigo_ibge ?? null
                     ),
-                    nomeMunicipio: $unidade['nomeMunicipio']
-                        ?? $unidade['municipioNome']
+                    nomeMunicipio: $unidade->nomeMunicipio
+                        ?? $unidade->municipioNome
                         ?? $geo?->nome_municipio,
                     // API PCA: `poder`/`esfera`; contratações: `poderId`/`esferaId`.
-                    poder: $unidade['poder'] ?? $unidade['poderId'] ?? null,
-                    esfera: $unidade['esfera'] ?? $unidade['esferaId'] ?? null,
+                    poder: $unidade->poder ?? $unidade->poderId ?? null,
+                    esfera: $unidade->esfera ?? $unidade->esferaId ?? null,
                     payloadCompleto: $unidade
                 );
             }

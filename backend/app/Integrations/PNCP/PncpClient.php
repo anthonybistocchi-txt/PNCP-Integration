@@ -72,7 +72,7 @@ class PncpClient
      * Busca as unidades de um órgão que possuem PCA no ano especificado.
      * O endpoint pagina (default 10); agregamos todas as páginas aqui.
      *
-     * @return list<array<string, mixed>>
+     * @return list<object>
      */
     public function getPcaUnidades(string $cnpj, int $ano): array
     {
@@ -95,7 +95,7 @@ class PncpClient
                 $this->throwForStatus($response);
             }
 
-            $chunk = json_decode($response->body(), true);
+            $chunk = json_decode($response->body());
             if (! is_array($chunk) || $chunk === []) {
                 break;
             }
@@ -116,6 +116,8 @@ class PncpClient
 
     /**
      * Busca a lista consolidada de PCAs de um órgão no ano especificado.
+     *
+     * @return list<object>
      */
     public function getPcaConsolidado(string $cnpj, int $ano): array
     {
@@ -124,7 +126,7 @@ class PncpClient
         $response = $this->request($url, [], (int) config('pncp.http.timeout'));
 
         if ($response->successful()) {
-            $pcas = json_decode($response->body(), true);
+            $pcas = json_decode($response->body());
             return is_array($pcas) ? $pcas : [];
         }
 
@@ -157,6 +159,8 @@ class PncpClient
 
     /**
      * Busca o valor por categoria de item de um PCA.
+     *
+     * @return list<object>
      */
     public function getPcaValorCategoria(string $cnpj, int $ano, int $sequencial): array
     {
@@ -165,7 +169,7 @@ class PncpClient
         $response = $this->request($url, [], (int) config('pncp.http.timeout'));
 
         if ($response->successful()) {
-            $valores = json_decode($response->body(), true);
+            $valores = json_decode($response->body());
             return is_array($valores) ? $valores : [];
         }
 

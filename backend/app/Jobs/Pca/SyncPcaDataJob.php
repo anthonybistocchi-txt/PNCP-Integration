@@ -82,11 +82,11 @@ class SyncPcaDataJob implements ShouldQueue, ShouldBeUnique
 
             $plans = [];
             foreach ($unidades as $data) {
-                if (! is_array($data)) {
+                if (! is_object($data)) {
                     continue;
                 }
 
-                $sequencial = (int) ($data['sequencialPca'] ?? 0);
+                $sequencial = (int) ($data->sequencialPca ?? 0);
                 if ($sequencial <= 0) {
                     continue;
                 }
@@ -95,12 +95,12 @@ class SyncPcaDataJob implements ShouldQueue, ShouldBeUnique
                     cnpjOrgao: $this->dto->cnpj,
                     anoPca: $this->dto->ano,
                     sequencialPca: $sequencial,
-                    codigoUnidade: $data['codigoUnidade'] ?? $data['unidadeOrgao']['codigoUnidade'] ?? null,
-                    nomeUnidade: $data['nomeUnidade'] ?? $data['unidadeOrgao']['nomeUnidade'] ?? null,
-                    situacaoPca: $data['situacaoPca'] ?? null,
-                    dataPublicacaoPncp: $data['dataPublicacaoPncp'] ?? null,
-                    dataInclusao: $data['dataInclusao'] ?? null,
-                    dataAtualizacao: $data['dataAtualizacao'] ?? null,
+                    codigoUnidade: $data->codigoUnidade ?? $data->unidadeOrgao->codigoUnidade ?? null,
+                    nomeUnidade: $data->nomeUnidade ?? $data->unidadeOrgao->nomeUnidade ?? null,
+                    situacaoPca: $data->situacaoPca ?? null,
+                    dataPublicacaoPncp: $data->dataPublicacaoPncp ?? null,
+                    dataInclusao: $data->dataInclusao ?? null,
+                    dataAtualizacao: $data->dataAtualizacao ?? null,
                     payloadCompleto: $data
                 );
             }

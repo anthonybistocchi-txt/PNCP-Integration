@@ -14,6 +14,6 @@ class PncpOrgaoUnidadeData
         public readonly ?string $nomeMunicipio,
         public readonly ?string $poder,
         public readonly ?string $esfera,
-        public readonly ?array $payloadCompleto
+        public readonly ?object $payloadCompleto
     ) {}
 }

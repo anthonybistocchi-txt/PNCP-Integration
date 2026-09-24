@@ -14,7 +14,7 @@ final class PcaPlanData
         public readonly ?string $dataPublicacaoPncp = null,
         public readonly ?string $dataInclusao = null,
         public readonly ?string $dataAtualizacao = null,
-        public readonly ?array $payloadCompleto = null,
+        public readonly ?object $payloadCompleto = null,
     ) {}
 
     public function toArray(): array

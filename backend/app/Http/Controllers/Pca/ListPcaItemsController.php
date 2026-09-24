@@ -4,20 +4,45 @@ namespace App\Http\Controllers\Pca;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Pca\ListPcaItemsRequest;
-use App\Http\Resources\Pca\PcaItemResource;
+use App\Resources\Pca\PcaItemResource;
 use App\Services\Pca\PcaItemsService;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 
 class ListPcaItemsController extends Controller
 {
-    public function list(ListPcaItemsRequest $request, PcaItemsService $service): JsonResponse
+    public function __construct(
+        private PcaItemsService $service
+    ) {}
+
+    public function list(ListPcaItemsRequest $request): JsonResponse
     {
-        $dto = $request->toDTO();
-        $result = $service->list($dto);
+        $startedAt = now();
+
+        $dto    = $request->toDTO();
+        $result = $this->service->list($dto);
+
+        $items = PcaItemResource::collection($result->data);
+
+        Log::info(json_encode([
+            'event'       => 'API_READ_SUCCESS',
+            'user_id'     => Auth::user()->id,
+            'filters'     => (array) $dto,
+            'results'     => [
+                'count_page' => $result->count_page,
+                'has_more'   => $result->has_more,
+            ],
+            'duration_ms' => $startedAt->diffInMilliseconds(now()),
+        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
 
         return response()->json([
-            'data' => PcaItemResource::collection($result['data']),
-            'next_cursor' => $result['next_cursor'],
-        ]);
+            'data'        => $items,
+            'page'        => $result->page,
+            'count_page'  => $result->count_page,
+            'count'       => $result->count,
+            'next_cursor' => $result->next_cursor,
+            'has_more'    => $result->has_more,
+        ], 200);
     }
 }

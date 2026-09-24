@@ -21,7 +21,7 @@ class PcaItemRepositoryTest extends TestCase
             'sequencial_pca' => 1,
             'data_publicacao_pncp' => now()
         ]);
-        
+
         PcaItem::create([
             'pca_plan_id' => $plan2026->id,
             'numero_item' => 1,
@@ -44,7 +44,51 @@ class PcaItemRepositoryTest extends TestCase
         $repository = new PcaItemRepository();
         $result = $repository->list(new ListPcaItemsDTO(ano: 2026));
 
-        $this->assertCount(1, $result['data']);
-        $this->assertEquals('Notebook 2026', $result['data'][0]->descricao_item);
+        $this->assertCount(1, $result->data);
+        $this->assertEquals('Notebook 2026', $result->data->first()->descricao_item);
+        $this->assertFalse($result->has_more);
+        $this->assertNull($result->next_cursor);
+    }
+
+    public function test_keyset_pagination_returns_cursor_without_duplicates()
+    {
+        $plan = PcaPlan::create([
+            'cnpj_orgao' => '111',
+            'ano_pca' => 2026,
+            'sequencial_pca' => 1,
+            'data_publicacao_pncp' => now(),
+        ]);
+
+        for ($i = 1; $i <= 3; $i++) {
+            PcaItem::create([
+                'pca_plan_id' => $plan->id,
+                'numero_item' => $i,
+                'descricao_item' => "Item {$i}",
+                'data_publicacao_pncp' => now()->subDays($i),
+            ]);
+        }
+
+        $repository = new PcaItemRepository();
+
+        $firstPage = $repository->list(new ListPcaItemsDTO(ano: 2026, limit: 2));
+
+        $this->assertCount(2, $firstPage->data);
+        $this->assertTrue($firstPage->has_more);
+        $this->assertNotNull($firstPage->next_cursor);
+        $this->assertSame(1, $firstPage->page);
+        $this->assertSame(3, $firstPage->count);
+
+        $secondPage = $repository->list(new ListPcaItemsDTO(
+            ano: 2026,
+            limit: 2,
+            cursor: $firstPage->next_cursor,
+        ));
+
+        $this->assertCount(1, $secondPage->data);
+        $this->assertFalse($secondPage->has_more);
+
+        $ids = $firstPage->data->pluck('id')->merge($secondPage->data->pluck('id'));
+
+        $this->assertCount(3, $ids->unique());
     }
 }

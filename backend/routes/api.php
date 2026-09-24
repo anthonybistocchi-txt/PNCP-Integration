@@ -3,6 +3,7 @@
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\Auth\MeController;
 use App\Http\Controllers\Infra\HealthCheckController;
+use App\Http\Controllers\Pca\ListPcaItemsController;
 use App\Http\Controllers\PublicContratations\ListPublicContratationsController;
 use App\Http\Controllers\PublicContratations\ListRelevantContratationsController;
 use App\Http\Controllers\UserContratationFilters\DeleteUserContratationFilterController;
@@ -42,7 +43,7 @@ Route::middleware('auth.api')->group(function () {
         });
         
         Route::prefix('pca')->group(function () {
-            Route::match(['QUERY', 'GET'], '/items', [\App\Http\Controllers\Pca\ListPcaItemsController::class, 'list'])->middleware('throttle:60,1');
+            Route::match(['QUERY', 'GET'], '/items', [ListPcaItemsController::class, 'list'])->middleware('throttle:60,1');
         });
         
     });
