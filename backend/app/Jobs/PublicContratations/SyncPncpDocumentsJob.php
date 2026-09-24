@@ -109,7 +109,7 @@ class SyncPncpDocumentsJob implements ShouldQueue, ShouldBeUnique
             ->toArray();
 
         if (empty($records)) {
-            Log::info('PNCP_DOCUMENTOS_FINISHED', [
+            Log::info('PNCP_DOCUMENTOS_EMPTY', [
                 'source'           => 'fase2',
                 'modalidade'       => $this->dto->codigoModalidadeContratacao,
                 'dataInicial'      => $this->dto->dataInicial,

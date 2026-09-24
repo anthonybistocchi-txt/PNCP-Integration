@@ -100,7 +100,7 @@ class SyncPncpPendingDocumentsJob implements ShouldQueue, ShouldBeUnique
             ->toArray();
 
         if (empty($records)) {
-            Log::info('PNCP_DOCUMENTOS_FINISHED', [
+            Log::info('PNCP_DOCUMENTOS_EMPTY', [
                 'source'           => 'pendentes',
                 'modalidade'       => $this->modalidade,
                 'status'           => 'empty',

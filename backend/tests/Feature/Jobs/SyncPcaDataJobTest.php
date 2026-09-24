@@ -21,7 +21,7 @@ class SyncPcaDataJobTest extends TestCase
         Bus::fake();
 
         $clientMock = Mockery::mock(PncpClient::class);
-        $clientMock->shouldReceive('getPcaConsolidado')->andReturn([]);
+        $clientMock->shouldReceive('getPcaUnidades')->andReturn([]);
         $this->app->instance(PncpClient::class, $clientMock);
 
         $dto = new PcaSyncParamsDTO(ano: 2026, cnpj: '123');

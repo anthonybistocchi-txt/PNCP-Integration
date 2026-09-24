@@ -58,10 +58,12 @@ class SyncPcaDataJob implements ShouldQueue, ShouldBeUnique
         }
 
         try {
-            $response = $client->getPcaConsolidado($this->dto->cnpj, $this->dto->ano);
+            // `/consolidado` é um resumo do órgão (objeto único). A lista de
+            // planos (sequencial + unidade) vem de `/consolidado/unidades`.
+            $unidades = $client->getPcaUnidades($this->dto->cnpj, $this->dto->ano);
             $circuitBreaker->recordSuccess(PncpCircuitBreaker::SCOPE_PCA);
 
-            if (empty($response)) {
+            if ($unidades === []) {
                 Log::info('PNCP_PCA_FINISHED_EMPTY', [
                     'cnpj' => $this->dto->cnpj,
                     'ano' => $this->dto->ano,
@@ -79,19 +81,43 @@ class SyncPcaDataJob implements ShouldQueue, ShouldBeUnique
             ]);
 
             $plans = [];
-            foreach ($response as $data) {
+            foreach ($unidades as $data) {
+                if (! is_array($data)) {
+                    continue;
+                }
+
+                $sequencial = (int) ($data['sequencialPca'] ?? 0);
+                if ($sequencial <= 0) {
+                    continue;
+                }
+
                 $plans[] = new PcaPlanData(
                     cnpjOrgao: $this->dto->cnpj,
                     anoPca: $this->dto->ano,
-                    sequencialPca: $data['sequencialPca'] ?? 0,
-                    codigoUnidade: $data['unidadeOrgao']['codigoUnidade'] ?? null,
-                    nomeUnidade: $data['unidadeOrgao']['nomeUnidade'] ?? null,
+                    sequencialPca: $sequencial,
+                    codigoUnidade: $data['codigoUnidade'] ?? $data['unidadeOrgao']['codigoUnidade'] ?? null,
+                    nomeUnidade: $data['nomeUnidade'] ?? $data['unidadeOrgao']['nomeUnidade'] ?? null,
                     situacaoPca: $data['situacaoPca'] ?? null,
                     dataPublicacaoPncp: $data['dataPublicacaoPncp'] ?? null,
                     dataInclusao: $data['dataInclusao'] ?? null,
                     dataAtualizacao: $data['dataAtualizacao'] ?? null,
                     payloadCompleto: $data
                 );
+            }
+
+            if ($plans === []) {
+                PncpPcaCiclo::where('sync_id', $this->syncId)->update([
+                    'status' => 'empty',
+                    'finished_at' => now(),
+                ]);
+
+                Log::info('PNCP_PCA_FINISHED_EMPTY', [
+                    'cnpj' => $this->dto->cnpj,
+                    'ano' => $this->dto->ano,
+                    'reason' => 'unidades sem sequencialPca',
+                ]);
+
+                return;
             }
 
             $upsertAction->handle($plans);
