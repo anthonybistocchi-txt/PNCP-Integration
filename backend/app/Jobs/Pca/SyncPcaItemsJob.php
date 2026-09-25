@@ -58,6 +58,16 @@ class SyncPcaItemsJob implements ShouldQueue
             $circuitBreaker->recordSuccess(PncpCircuitBreaker::SCOPE_PCA);
 
             if ($totalRecords <= 0) {
+                PncpPcaCiclo::create([
+                    'sync_id' => (string) Str::uuid(),
+                    'cnpj_orgao' => $this->cnpj,
+                    'ano_pca' => $this->ano,
+                    'sequencial_pca' => $this->sequencial,
+                    'status' => PncpPcaCiclo::STATUS_EMPTY,
+                    'started_at' => $startedAt,
+                    'finished_at' => now(),
+                ]);
+
                 return;
             }
 
@@ -72,7 +82,7 @@ class SyncPcaItemsJob implements ShouldQueue
                 'sequencial_pca' => $this->sequencial,
                 'total_anunciado' => $totalRecords,
                 'total_paginas' => $totalPaginas,
-                'status' => 'started',
+                'status' => PncpPcaCiclo::STATUS_STARTED,
                 'started_at' => $startedAt,
             ]);
 
@@ -96,13 +106,27 @@ class SyncPcaItemsJob implements ShouldQueue
 
     public function failed(\Throwable $exception): void
     {
+        // Falhou antes de medir a quantidade (ex.: API fora do ar durante todo
+        // o retryUntil): o ciclo de plano nem chegou a ser criado. Registra um
+        // registro abandonado para o gap ficar visível em pncp_pca_ciclos.
         if ($this->syncId === '') {
+            PncpPcaCiclo::create([
+                'sync_id' => (string) Str::uuid(),
+                'cnpj_orgao' => $this->cnpj,
+                'ano_pca' => $this->ano,
+                'sequencial_pca' => $this->sequencial,
+                'status' => PncpPcaCiclo::STATUS_ABANDONED,
+                'finished_at' => now(),
+            ]);
+
             return;
         }
 
-        PncpPcaCiclo::where('sync_id', $this->syncId)->update([
-            'status' => 'abandoned',
-            'finished_at' => now(),
-        ]);
+        PncpPcaCiclo::where('sync_id', $this->syncId)
+            ->where('status', PncpPcaCiclo::STATUS_STARTED)
+            ->update([
+                'status' => PncpPcaCiclo::STATUS_ABANDONED,
+                'finished_at' => now(),
+            ]);
     }
 }

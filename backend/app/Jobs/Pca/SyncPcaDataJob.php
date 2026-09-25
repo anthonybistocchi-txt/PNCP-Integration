@@ -76,7 +76,7 @@ class SyncPcaDataJob implements ShouldQueue, ShouldBeUnique
                 'sync_id' => $this->syncId,
                 'cnpj_orgao' => $this->dto->cnpj,
                 'ano_pca' => $this->dto->ano,
-                'status' => 'started',
+                'status' => PncpPcaCiclo::STATUS_STARTED,
                 'started_at' => $startedAt,
             ]);
 
@@ -107,7 +107,7 @@ class SyncPcaDataJob implements ShouldQueue, ShouldBeUnique
 
             if ($plans === []) {
                 PncpPcaCiclo::where('sync_id', $this->syncId)->update([
-                    'status' => 'empty',
+                    'status' => PncpPcaCiclo::STATUS_EMPTY,
                     'finished_at' => now(),
                 ]);
 
@@ -130,6 +130,14 @@ class SyncPcaDataJob implements ShouldQueue, ShouldBeUnique
                 );
             }
 
+            // O mestre só enumera os planos e despacha um sub-mestre por plano.
+            // A contagem de itens/páginas vive no nível do plano; aqui o ciclo
+            // de órgão se encerra assim que o fan-out é concluído.
+            PncpPcaCiclo::where('sync_id', $this->syncId)->update([
+                'status' => PncpPcaCiclo::STATUS_FINISHED,
+                'finished_at' => now(),
+            ]);
+
         } catch (\Throwable $error) {
             $failureHandler->handle($error, $this, PncpCircuitBreaker::SCOPE_PCA, [
                 'action' => 'SyncPcaDataJob',
@@ -146,9 +154,11 @@ class SyncPcaDataJob implements ShouldQueue, ShouldBeUnique
             return;
         }
 
-        PncpPcaCiclo::where('sync_id', $this->syncId)->update([
-            'status' => 'abandoned',
-            'finished_at' => now(),
-        ]);
+        PncpPcaCiclo::where('sync_id', $this->syncId)
+            ->where('status', PncpPcaCiclo::STATUS_STARTED)
+            ->update([
+                'status' => PncpPcaCiclo::STATUS_ABANDONED,
+                'finished_at' => now(),
+            ]);
     }
 }

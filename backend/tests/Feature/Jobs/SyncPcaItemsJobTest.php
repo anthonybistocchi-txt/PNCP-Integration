@@ -49,7 +49,7 @@ class SyncPcaItemsJobTest extends TestCase
         ]);
     }
 
-    public function test_pca_without_items_creates_no_cycle_and_dispatches_nothing()
+    public function test_pca_without_items_creates_an_empty_cycle_and_dispatches_nothing()
     {
         Bus::fake();
 
@@ -67,6 +67,11 @@ class SyncPcaItemsJobTest extends TestCase
 
         Bus::assertNotDispatched(ProcessPcaItemsPageJob::class);
 
-        $this->assertDatabaseCount('pncp_pca_ciclos', 0);
+        $this->assertDatabaseHas('pncp_pca_ciclos', [
+            'cnpj_orgao' => '12345678000199',
+            'ano_pca' => 2026,
+            'sequencial_pca' => 1,
+            'status' => 'empty',
+        ]);
     }
 }

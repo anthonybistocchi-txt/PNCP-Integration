@@ -150,12 +150,14 @@ class ProcessPcaItemsPageJob implements ShouldQueue
             return null;
         }
 
-        PncpPcaCiclo::where('sync_id', $this->syncId)->update([
-            'status' => 'finished',
-            'finished_at' => now(),
-            'paginas_completas' => $summary['units_completed'],
-            'items_processados' => $summary['items_processed'],
-        ]);
+        PncpPcaCiclo::where('sync_id', $this->syncId)
+            ->where('status', PncpPcaCiclo::STATUS_STARTED)
+            ->update([
+                'status' => PncpPcaCiclo::STATUS_FINISHED,
+                'finished_at' => now(),
+                'paginas_completas' => $summary['units_completed'],
+                'items_processados' => $summary['items_processed'],
+            ]);
 
         return $summary;
     }
@@ -175,10 +177,12 @@ class ProcessPcaItemsPageJob implements ShouldQueue
         $summary = $this->markCyclePageDone(app(PncpSyncCycleTracker::class), 0);
 
         if ($summary === null) {
-            PncpPcaCiclo::where('sync_id', $this->syncId)->update([
-                'status' => 'abandoned',
-                'finished_at' => now(),
-            ]);
+            PncpPcaCiclo::where('sync_id', $this->syncId)
+                ->where('status', PncpPcaCiclo::STATUS_STARTED)
+                ->update([
+                    'status' => PncpPcaCiclo::STATUS_ABANDONED,
+                    'finished_at' => now(),
+                ]);
         }
     }
 }

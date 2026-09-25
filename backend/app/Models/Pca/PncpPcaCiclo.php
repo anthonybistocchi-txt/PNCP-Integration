@@ -6,6 +6,11 @@ use Illuminate\Database\Eloquent\Model;
 
 class PncpPcaCiclo extends Model
 {
+    public const STATUS_STARTED = 'started';
+    public const STATUS_FINISHED = 'finished';
+    public const STATUS_EMPTY = 'empty';
+    public const STATUS_ABANDONED = 'abandoned';
+
     protected $table = 'pncp_pca_ciclos';
 
     protected $fillable = [
@@ -23,7 +28,13 @@ class PncpPcaCiclo extends Model
     ];
 
     protected $casts = [
-        'started_at' => 'datetime',
-        'finished_at' => 'datetime',
+        'ano_pca'          => 'integer',
+        'sequencial_pca'   => 'integer',
+        'total_anunciado'  => 'integer',
+        'total_paginas'    => 'integer',
+        'items_processados'=> 'integer',
+        'paginas_completas'=> 'integer',
+        'started_at'       => 'datetime',
+        'finished_at'      => 'datetime',
     ];
 }
