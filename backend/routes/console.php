@@ -49,8 +49,8 @@ Schedule::command('pncp:sync-listagem-faltantes')
 // `pncp:discover-unidades` NÃO entra no schedule: é enriquecimento opcional
 // (inventário em pncp_orgao_unidades). O sync de PCA usa getPcaConsolidado
 // e já traz unidadeOrgao no plano — não depende dessa tabela.
-Schedule::command('pncp:import-orgaos')->dailyAt('15:00');
-Schedule::command('pncp:discover-unidades')->dailyAt('16:00');
+Schedule::command('pncp:import-orgaos')->dailyAt('18:00');
+Schedule::command('pncp:discover-unidades')->dailyAt('20:00');
 
 // Sincronização diária de PCA (horário diferente para não competir com listagem das 00:45)
 Schedule::command('pncp:sync-pca')->dailyAt('12:30');
