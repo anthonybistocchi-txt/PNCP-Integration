@@ -53,19 +53,15 @@ class SyncPcaItemsJob implements ShouldQueue
         $tamanhoPagina = 50;
 
         try {
-            $response = $client->getPcaItens($this->cnpj, $this->ano, $this->sequencial, [
-                'pagina' => 1,
-                'tamanhoPagina' => $tamanhoPagina,
-            ]);
+            $totalRecords = $client->getPcaItensQuantidade($this->cnpj, $this->ano, $this->sequencial);
 
             $circuitBreaker->recordSuccess(PncpCircuitBreaker::SCOPE_PCA);
 
-            if (! $response || empty($response->data)) {
+            if ($totalRecords <= 0) {
                 return;
             }
 
-            $totalPaginas = (int) ($response->totalPaginas ?? 1);
-            $totalRecords = (int) ($response->totalRegistros ?? 0);
+            $totalPaginas = (int) ceil($totalRecords / $tamanhoPagina);
             $this->syncId = (string) Str::uuid();
 
             $cycleTracker->start($this->syncId, $totalPaginas, $totalRecords);

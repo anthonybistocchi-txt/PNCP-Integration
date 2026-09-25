@@ -115,19 +115,48 @@ class PncpClient
     }
 
     /**
-     * Busca a lista consolidada de PCAs de um órgão no ano especificado.
+     * Busca o resumo consolidado do PCA de um órgão no ano especificado.
      *
-     * @return list<object>
+     * O endpoint devolve um objeto único (não uma lista); a lista de planos
+     * por unidade vem de `getPcaUnidades()`.
      */
-    public function getPcaConsolidado(string $cnpj, int $ano): array
+    public function getPcaConsolidado(string $cnpj, int $ano): ?object
     {
         $url = $this->baseUrlDocumentos . "/{$cnpj}/pca/{$ano}/consolidado";
 
         $response = $this->request($url, [], (int) config('pncp.http.timeout'));
 
         if ($response->successful()) {
-            $pcas = json_decode($response->body());
-            return is_array($pcas) ? $pcas : [];
+            $pca = json_decode($response->body());
+
+            return is_object($pca) ? $pca : null;
+        }
+
+        if ($response->notFound()) {
+            return null;
+        }
+
+        $this->throwForStatus($response);
+    }
+
+    /**
+     * Busca os itens de um PCA específico (por sequencial).
+     *
+     * O endpoint devolve um array simples, sem envelope de paginação — o
+     * total de itens, quando necessário, vem de `getPcaItensQuantidade()`.
+     *
+     * @return list<object>
+     */
+    public function getPcaItens(string $cnpj, int $ano, int $sequencial, array $params = []): array
+    {
+        $url = $this->baseUrlDocumentos . "/{$cnpj}/pca/{$ano}/{$sequencial}/itens";
+
+        $response = $this->request($url, $params, (int) config('pncp.http.timeout'));
+
+        if ($response->successful()) {
+            $itens = json_decode($response->body());
+
+            return is_array($itens) ? $itens : [];
         }
 
         if ($response->notFound()) {
@@ -138,20 +167,23 @@ class PncpClient
     }
 
     /**
-     * Busca os itens de um PCA específico (por sequencial).
+     * Quantidade total de itens de um PCA.
+     *
+     * O endpoint de itens não devolve total no payload, então é esta chamada
+     * que dimensiona a paginação do sync.
      */
-    public function getPcaItens(string $cnpj, int $ano, int $sequencial, array $params = []): ?object
+    public function getPcaItensQuantidade(string $cnpj, int $ano, int $sequencial): int
     {
-        $url = $this->baseUrlDocumentos . "/{$cnpj}/pca/{$ano}/{$sequencial}/itens";
+        $url = $this->baseUrlDocumentos . "/{$cnpj}/pca/{$ano}/{$sequencial}/itens/quantidade";
 
-        $response = $this->request($url, $params, (int) config('pncp.http.timeout'));
+        $response = $this->request($url, [], (int) config('pncp.http.timeout'));
 
         if ($response->successful()) {
-            return json_decode($response->body());
+            return (int) json_decode($response->body());
         }
 
         if ($response->notFound()) {
-            return null;
+            return 0;
         }
 
         $this->throwForStatus($response);
@@ -164,7 +196,7 @@ class PncpClient
      */
     public function getPcaValorCategoria(string $cnpj, int $ano, int $sequencial): array
     {
-        $url = $this->baseUrlDocumentos . "/{$cnpj}/pca/{$ano}/{$sequencial}/valorcategoriaitem";
+        $url = $this->baseUrlDocumentos . "/{$cnpj}/pca/{$ano}/{$sequencial}/valorescategoriaitem";
 
         $response = $this->request($url, [], (int) config('pncp.http.timeout'));
 

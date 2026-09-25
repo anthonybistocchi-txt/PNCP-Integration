@@ -51,14 +51,14 @@ class ProcessPcaItemsPageJob implements ShouldQueue
         }
 
         try {
-            $response = $client->getPcaItens($this->cnpj, $this->ano, $this->sequencial, [
+            $itens = $client->getPcaItens($this->cnpj, $this->ano, $this->sequencial, [
                 'pagina' => $this->pagina,
                 'tamanhoPagina' => $this->tamanhoPagina,
             ]);
 
             $circuitBreaker->recordSuccess(PncpCircuitBreaker::SCOPE_PCA);
 
-            if (! $response || empty($response->data)) {
+            if ($itens === []) {
                 $this->markCyclePageDone($cycleTracker, 0);
 
                 return;
@@ -84,20 +84,20 @@ class ProcessPcaItemsPageJob implements ShouldQueue
             }
 
             $itemsData = [];
-            foreach ($response->data as $item) {
+            foreach ($itens as $item) {
                 $itemsData[] = new PcaItemData(
                     pcaPlanId: (int) $pcaPlan->id,
                     numeroItem: (int) ($item->numeroItem ?? 0),
-                    categoriaItemPca: isset($item->categoriaItemPca) ? (int) $item->categoriaItemPca : null,
+                    categoriaItemPca: isset($item->categoriaItemPcaid) ? (int) $item->categoriaItemPcaid : null,
                     categoriaItemPcaNome: $item->categoriaItemPcaNome ?? null,
                     catalogoId: isset($item->catalogoId) ? (int) $item->catalogoId : null,
                     classificacaoCatalogoId: isset($item->classificacaoCatalogoId) ? (int) $item->classificacaoCatalogoId : null,
                     classificacaoSuperiorCodigo: $item->classificacaoSuperiorCodigo ?? null,
                     classificacaoSuperiorNome: $item->classificacaoSuperiorNome ?? null,
                     pdmCodigo: $item->pdmCodigo ?? null,
-                    pdmNome: $item->pdmNome ?? null,
+                    pdmNome: $item->pdmDescricao ?? null,
                     codigoItem: $item->codigoItem ?? null,
-                    descricaoItem: $item->descricaoItem ?? null,
+                    descricaoItem: $item->descricao ?? null,
                     unidadeFornecimento: $item->unidadeFornecimento ?? null,
                     quantidade: isset($item->quantidade) ? (float) $item->quantidade : null,
                     valorUnitario: isset($item->valorUnitario) ? (float) $item->valorUnitario : null,
