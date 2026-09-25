@@ -2,7 +2,7 @@
 
 namespace App\DTOs\Pncp;
 
-class PncpOrgaoUnidadeData
+final class PncpOrgaoUnidadeData
 {
     public function __construct(
         public readonly string $cnpjOrgao,

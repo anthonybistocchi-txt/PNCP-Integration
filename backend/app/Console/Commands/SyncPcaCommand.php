@@ -4,7 +4,7 @@ namespace App\Console\Commands;
 
 use App\DTOs\Pca\PcaSyncParamsDTO;
 use App\Jobs\Pca\SyncPcaDataJob;
-use App\Models\Pncp\PncpOrgao;
+use App\Repositories\Pncp\PncpOrgaoRepository;
 use Illuminate\Console\Command;
 
 class SyncPcaCommand extends Command
@@ -16,17 +16,12 @@ class SyncPcaCommand extends Command
 
     protected $description = 'Dispara os jobs para sincronizar o PCA dos órgãos ativos';
 
-    public function handle(): int
+    public function handle(PncpOrgaoRepository $repository): int
     {
         $ano = $this->option('ano') ? (int) $this->option('ano') : now()->year;
         $cnpjEspecifico = $this->option('cnpj');
 
-        $query = PncpOrgao::where('ativo', true);
-        if ($cnpjEspecifico) {
-            $query->where('cnpj', $cnpjEspecifico);
-        }
-
-        $orgaos = $query->get();
+        $orgaos = $repository->listActive($cnpjEspecifico);
 
         if ($orgaos->isEmpty()) {
             $this->warn('Nenhum órgão ativo encontrado para sincronizar o PCA.');
