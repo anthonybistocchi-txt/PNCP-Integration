@@ -21,7 +21,7 @@ Route::middleware('auth.api')->group(function () {
     Route::get('/me', [MeController::class, 'me'])->middleware('throttle:60,1');
     Route::post('auth/register', [AuthController::class, 'register'])->middleware('verify_permission_to_create_user', 'throttle:60,1');
 
-    route::prefix('v1/')->group(function () {
+    Route::prefix('v1/')->group(function () {
         
         Route::prefix('keywords')->group(function () {
             Route::get('/', [ListUserKeywordsController::class, 'listByUserId'])->middleware('throttle:60,1');

@@ -2,28 +2,14 @@
 
 namespace App\DTOs\Auth;
 
-use App\Http\Requests\Auth\AuthRequest;
-
 final class AuthDTO
 {
     public function __construct(
-        public string $name,
-        public string $email,
-        public string $companyName,
-        public ?string $cpf,
-        public ?string $cnpj,
-        public string $password,
+        public readonly string $name,
+        public readonly string $email,
+        public readonly string $companyName,
+        public readonly ?string $cpf,
+        public readonly ?string $cnpj,
+        public readonly string $password,
     ) {}
-
-    public static function fromRequest(AuthRequest $request): self
-    {
-        return new self(
-            name: $request->name,
-            email: $request->email,
-            companyName: $request->companyName,
-            cpf: $request->cpf,
-            cnpj: $request->cnpj,
-            password: $request->password,
-        );
-    }
 }

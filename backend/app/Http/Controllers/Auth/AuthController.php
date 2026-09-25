@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Auth;
 use App\Actions\User\CreateUserAction;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\AuthRequest;
+use App\Resources\Auth\UserResource;
 use Illuminate\Http\JsonResponse;
 
 class AuthController extends Controller
@@ -19,7 +20,7 @@ class AuthController extends Controller
 
         return response()->json([
             'message' => 'Usuário criado com sucesso',
-            'data'    => $user,
+            'data'    => new UserResource($user),
         ], 201);
     }
 }
