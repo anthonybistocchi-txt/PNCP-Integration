@@ -2,10 +2,10 @@
 
 namespace App\Http\Controllers\PublicContratations;
 
+use App\Actions\PublicContratations\ListPublicContratationsAction;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\PublicContratations\ListPublicContratationsRequest;
 use App\Resources\PublicContratations\ListPublicContratationsResource;
-use App\Services\PublicContratations\PublicContratationsService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
@@ -13,7 +13,7 @@ use Illuminate\Support\Facades\Log;
 class ListPublicContratationsController extends Controller
 {
     public function __construct(
-        private PublicContratationsService $service
+        private ListPublicContratationsAction $action
     ) {}
 
     public function list(ListPublicContratationsRequest $request): JsonResponse
@@ -21,7 +21,7 @@ class ListPublicContratationsController extends Controller
         $startedAt = now();
 
         $dto    = $request->toDTO();
-        $result = $this->service->list($dto);
+        $result = $this->action->list($dto);
 
         $contratations = ListPublicContratationsResource::collection($result->data);
 

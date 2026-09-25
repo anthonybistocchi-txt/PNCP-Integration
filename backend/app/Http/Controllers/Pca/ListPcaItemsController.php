@@ -2,10 +2,10 @@
 
 namespace App\Http\Controllers\Pca;
 
+use App\Actions\Pca\ListPcaItemsAction;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Pca\ListPcaItemsRequest;
 use App\Resources\Pca\PcaItemResource;
-use App\Services\Pca\PcaItemsService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
@@ -13,7 +13,7 @@ use Illuminate\Support\Facades\Log;
 class ListPcaItemsController extends Controller
 {
     public function __construct(
-        private PcaItemsService $service
+        private ListPcaItemsAction $action
     ) {}
 
     public function list(ListPcaItemsRequest $request): JsonResponse
@@ -21,7 +21,7 @@ class ListPcaItemsController extends Controller
         $startedAt = now();
 
         $dto    = $request->toDTO();
-        $result = $this->service->list($dto);
+        $result = $this->action->list($dto);
 
         $items = PcaItemResource::collection($result->data);
 
