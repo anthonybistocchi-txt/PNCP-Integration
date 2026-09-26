@@ -19,7 +19,7 @@ class PcaItemRepositoryTest extends TestCase
             'cnpj_orgao' => '111',
             'ano_pca' => 2026,
             'sequencial_pca' => 1,
-            'data_publicacao_pncp' => now()
+            'data_publicacao_pncp' => now(),
         ]);
 
         PcaItem::create([
@@ -32,7 +32,7 @@ class PcaItemRepositoryTest extends TestCase
             'cnpj_orgao' => '111',
             'ano_pca' => 2027,
             'sequencial_pca' => 2,
-            'data_publicacao_pncp' => now()
+            'data_publicacao_pncp' => now(),
         ]);
 
         PcaItem::create([
@@ -41,7 +41,7 @@ class PcaItemRepositoryTest extends TestCase
             'descricao_item' => 'Notebook 2027',
         ]);
 
-        $repository = new PcaItemRepository();
+        $repository = $this->app->make(PcaItemRepository::class);
         $result = $repository->list(new ListPcaItemsDTO(ano: 2026));
 
         $this->assertCount(1, $result->data);
@@ -68,7 +68,7 @@ class PcaItemRepositoryTest extends TestCase
             ]);
         }
 
-        $repository = new PcaItemRepository();
+        $repository = $this->app->make(PcaItemRepository::class);
 
         $firstPage = $repository->list(new ListPcaItemsDTO(ano: 2026, limit: 2));
 

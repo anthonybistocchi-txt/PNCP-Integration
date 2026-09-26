@@ -15,30 +15,28 @@ use Illuminate\Database\Eloquent\Builder;
 final class ContratationKeywordFilter
 {
     /**
-     * @param list<string> $includeKeywords
-     * @param list<string> $excludeKeywords
+     * @param  list<string>  $includeKeywords
+     * @param  list<string>  $excludeKeywords
      */
     public function apply(Builder $query, array $includeKeywords, array $excludeKeywords): Builder
     {
-        if ($includeKeywords !== []) {
-            $query->whereRaw(
-                $this->expression($includeKeywords),
-                $includeKeywords
-            );
-        }
-
-        if ($excludeKeywords !== []) {
-            $query->whereRaw(
-                'NOT (' . $this->expression($excludeKeywords) . ')',
-                $excludeKeywords
-            );
-        }
-
-        return $query;
+        return $query
+            ->when($includeKeywords !== [], function ($query) use ($includeKeywords) {
+                $query->whereRaw(
+                    $this->expression($includeKeywords),
+                    $includeKeywords
+                );
+            })
+            ->when($excludeKeywords !== [], function ($query) use ($excludeKeywords) {
+                $query->whereRaw(
+                    'NOT ('.$this->expression($excludeKeywords).')',
+                    $excludeKeywords
+                );
+            });
     }
 
     /**
-     * @param list<string> $keywords
+     * @param  list<string>  $keywords
      */
     private function expression(array $keywords): string
     {
