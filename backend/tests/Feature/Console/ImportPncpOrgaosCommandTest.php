@@ -2,7 +2,7 @@
 
 namespace Tests\Feature\Console;
 
-use App\Repositories\Pncp\PncpOrgaoRepository;
+use App\Repositories\Orgaos\OrgaoRepository;
 use Mockery;
 use Tests\TestCase;
 
@@ -12,7 +12,7 @@ class ImportPncpOrgaosCommandTest extends TestCase
     {
         $capturedRows = null;
 
-        $repository = Mockery::mock(PncpOrgaoRepository::class);
+        $repository = Mockery::mock(OrgaoRepository::class);
         $repository->shouldReceive('distinctOrgaosFromContratacoes')->andReturn(collect([
             (object) ['cnpj' => '11111111000111', 'razao_social' => 'ORGAO AUTO', 'poder' => 'E', 'esfera' => 'F'],
             (object) ['cnpj' => '22222222000122', 'razao_social' => 'ORGAO MANUAL', 'poder' => 'E', 'esfera' => 'F'],
@@ -23,7 +23,7 @@ class ImportPncpOrgaosCommandTest extends TestCase
             $capturedRows = $rows;
         });
 
-        $this->app->instance(PncpOrgaoRepository::class, $repository);
+        $this->app->instance(OrgaoRepository::class, $repository);
 
         $this->artisan('pncp:import-orgaos')
             ->expectsOutputToContain('Manuais ignorados: 1')

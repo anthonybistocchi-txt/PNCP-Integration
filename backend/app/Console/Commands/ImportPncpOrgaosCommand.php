@@ -2,7 +2,7 @@
 
 namespace App\Console\Commands;
 
-use App\Repositories\Pncp\PncpOrgaoRepository;
+use App\Repositories\Orgaos\OrgaoRepository;
 use Illuminate\Console\Command;
 
 class ImportPncpOrgaosCommand extends Command
@@ -13,7 +13,7 @@ class ImportPncpOrgaosCommand extends Command
 
     protected $description = 'Importa CNPJs únicos de public_contratations para pncp_orgaos, enriquecendo razao_social/poder/esfera do payload';
 
-    public function handle(PncpOrgaoRepository $repository): int
+    public function handle(OrgaoRepository $repository): int
     {
         $this->info('Coletando CNPJs únicos de public_contratations (com metadados do orgaoEntidade)...');
 
@@ -27,14 +27,14 @@ class ImportPncpOrgaosCommand extends Command
             return self::SUCCESS;
         }
 
-        $manuais    = $repository->manualCnpjs();
+        $manuais = $repository->manualCnpjs();
         $existentes = $repository->autoImportedCnpjs();
 
-        $now         = now();
-        $novos       = 0;
+        $now = now();
+        $novos = 0;
         $atualizados = 0;
-        $ignorados   = 0;
-        $batch       = [];
+        $ignorados = 0;
+        $batch = [];
 
         foreach ($orgaos as $orgao) {
             if (isset($manuais[$orgao->cnpj])) {
@@ -50,14 +50,14 @@ class ImportPncpOrgaosCommand extends Command
             }
 
             $batch[] = [
-                'cnpj'         => $orgao->cnpj,
+                'cnpj' => $orgao->cnpj,
                 'razao_social' => $orgao->razao_social,
-                'poder'        => $orgao->poder,
-                'esfera'       => $orgao->esfera,
-                'ativo'        => true,
+                'poder' => $orgao->poder,
+                'esfera' => $orgao->esfera,
+                'ativo' => true,
                 'importado_de' => 'public_contratations',
-                'created_at'   => $now,
-                'updated_at'   => $now,
+                'created_at' => $now,
+                'updated_at' => $now,
             ];
 
             if (count($batch) >= self::BATCH_SIZE) {

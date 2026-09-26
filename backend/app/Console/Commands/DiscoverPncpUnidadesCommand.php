@@ -3,7 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Jobs\Pncp\DiscoverPncpUnidadesJob;
-use App\Repositories\Pncp\PncpOrgaoRepository;
+use App\Repositories\Orgaos\OrgaoRepository;
 use App\Repositories\Pncp\PncpOrgaoUnidadeRepository;
 use Illuminate\Console\Command;
 
@@ -25,7 +25,7 @@ class DiscoverPncpUnidadesCommand extends Command
     protected $description = 'Enriquecimento opcional: descobre unidades administrativas dos órgãos (não é pré-requisito do sync PCA)';
 
     public function handle(
-        PncpOrgaoRepository $orgaoRepository,
+        OrgaoRepository $orgaoRepository,
         PncpOrgaoUnidadeRepository $unidadeRepository
     ): int {
         $ano = $this->option('ano') ? (int) $this->option('ano') : now()->year;
