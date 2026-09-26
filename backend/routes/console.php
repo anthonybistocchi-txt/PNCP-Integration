@@ -45,11 +45,12 @@ Schedule::command('pncp:sync-listagem-faltantes')
 // Allowlist de órgãos para PCA: before do sync, para o mestre não rodar
 // num conjunto vazio/velho. Zero HTTP — só DISTINCT em public_contratations
 // + enriquecimento de razao_social/poder/esfera do payload.
-//
-// `pncp:discover-unidades` NÃO entra no schedule: é enriquecimento opcional
-// (inventário em pncp_orgao_unidades). O sync de PCA usa getPcaConsolidado
-// e já traz unidadeOrgao no plano — não depende dessa tabela.
 Schedule::command('pncp:import-orgaos')->dailyAt('18:00');
+
+// Inventário de unidades (pncp_orgao_unidades): enriquecimento opcional,
+// agendado diariamente às 20:00 para rodar após o import-orgaos das 18:00.
+// O sync de PCA não depende dessa tabela — usa getPcaConsolidado que já
+// traz unidadeOrgao no plano.
 Schedule::command('pncp:discover-unidades')->dailyAt('20:00');
 
 // Sincronização diária de PCA (horário diferente para não competir com listagem das 00:45)

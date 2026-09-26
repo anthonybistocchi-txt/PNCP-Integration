@@ -27,7 +27,7 @@ Focado em ingestão em volume. Há dois domínios: **contratações** e **PCA**.
 2. O comando enfileira um `SyncPncpDataJob` por modalidade (1–10 por padrão).
 3. O mestre consulta o PNCP só para descobrir o total de páginas e faz fan-out de `ProcessPncpPageJob` (50 itens por página).
 4. Cada operário faz upsert em massa via `SyncPublicContratationAction`.
-5. Cada ciclo grava uma linha em `pncp_listagem_ciclos` (anunciado no START, processado no FINISH). Gaps incompletos aparecem em `pncp:listagem-gaps`.
+5. Cada ciclo grava uma linha em `pncp_listagem_ciclos` (anunciado no START, processado no FINISH). Gaps incompletos aparecem em `pncp:sync-listagem-faltantes`.
 
 **Repescagem semanal de gaps:** sábado e domingo às **02:00**, `pncp:sync-listagem-faltantes` reprocessa só ciclos incompletos em `pncp_listagem_ciclos` (dispara `SyncPncpDataJob` por intervalo/modalidade). Substitui o antigo backfill cego `pncp:sync --days=7`.
 
@@ -35,11 +35,10 @@ Backfill manual de um intervalo específico (ainda disponível via `--days` / da
 
 ```bash
 php artisan pncp:sync --data-inicial=20260914 --data-final=20260915 --modalidades=4,6,8,9
-php artisan pncp:listagem-gaps
 php artisan pncp:sync-listagem-faltantes
 ```
 
-Critério de gap: `abandoned`, `finished` com `items_processados < total_anunciado`, ou `started` além de `PNCP_RETRY_UNTIL_HOURS_LISTAGEM` (12h). Não usar contagem de `INSERT` — o upsert atualiza registros já existentes. `pncp:listagem-gaps` roda todo dia às 23:50.
+Critério de gap: `abandoned`, `finished` com `items_processados < total_anunciado`, ou `started` além de `PNCP_RETRY_UNTIL_HOURS_LISTAGEM` (12h). Não usar contagem de `INSERT` — o upsert atualiza registros já existentes. `pncp:sync-listagem-faltantes` roda sábado e domingo às 02:00.
 
 #### Contratações — Fase 2 (Documentos)
 
@@ -55,10 +54,9 @@ Ao terminar a listagem de uma modalidade, o sistema dispara `SyncPncpDocumentsJo
 
 Pipeline diário:
 
-1. **03:15** — `pncp:import-orgaos`: allowlist em `pncp_orgaos` a partir dos CNPJs distintos de `public_contratations`. Zero HTTP. Preenche `razao_social`, `poder` e `esfera` de `payload_completo->orgaoEntidade` (letras: poder `E|L|J|M`, esfera `F|E|M`). Registros `importado_de = manual` não são sobrescritos; `ativo` também não.
-2. **03:30** — `pncp:sync-pca`: para cada órgão ativo, despacha `SyncPcaDataJob` → `SyncPcaItemsJob` → `ProcessPcaItemsPageJob`. Persiste em `pca_plans` / `pca_items` e audita em `pncp_pca_ciclos`.
-
-**`pncp:discover-unidades` não entra no schedule.** É enriquecimento opcional (inventário em `pncp_orgao_unidades`). O sync de PCA não depende dessa tabela.
+1. **18:00** — `pncp:import-orgaos`: allowlist em `pncp_orgaos` a partir dos CNPJs distintos de `public_contratations`. Zero HTTP. Preenche `razao_social`, `poder` e `esfera` de `payload_completo->orgaoEntidade` (letras: poder `E|L|J|M`, esfera `F|E|M`). Registros `importado_de = manual` não são sobrescritos; `ativo` também não.
+2. **20:00** — `pncp:discover-unidades`: inventário opcional de unidades em `pncp_orgao_unidades`. O sync de PCA **não** depende dessa tabela.
+3. **12:30** — `pncp:sync-pca`: para cada órgão ativo, despacha `SyncPcaDataJob` → `SyncPcaItemsJob` → `ProcessPcaItemsPageJob`. Persiste em `pca_plans` / `pca_items` e audita em `pncp_pca_ciclos`.
 
 ```bash
 # Allowlist (também roda sozinha no schedule)
@@ -69,7 +67,7 @@ php artisan pncp:import-orgaos --dry-run
 php artisan pncp:sync-pca
 php artisan pncp:sync-pca --ano=2026 --cnpj=00394429000100
 
-# Unidades (opcional, sob demanda)
+# Unidades (opcional, sob demanda ou agendado às 20:00)
 php artisan pncp:discover-unidades
 php artisan pncp:discover-unidades --ano=2026 --force
 ```
@@ -160,13 +158,12 @@ Não é necessário subir `queue:work` à mão: os workers já sobem com o compo
 |--------|---------|--------|
 | diário 00:45 | `pncp:sync` | Listagem diária + disparo automático da Fase 2 |
 | `*/20` | `pncp:sync-documentos-pendentes` | Drenagem contínua de documentos |
-| diário 23:45 | `pncp:monitorar-documentos-pendentes` | Alerta de backlog de documentos |
-| diário 23:50 | `pncp:listagem-gaps --for-schedule` | Termômetro de gaps de listagem |
 | sáb/dom 02:00 | `pncp:sync-listagem-faltantes` | Reprocessa ciclos incompletos de listagem |
-| diário 03:15 | `pncp:import-orgaos` | Atualiza allowlist de órgãos (PCA) |
-| diário 03:30 | `pncp:sync-pca` | Sincroniza PCA dos órgãos ativos |
+| diário 18:00 | `pncp:import-orgaos` | Atualiza allowlist de órgãos (PCA) |
+| diário 20:00 | `pncp:discover-unidades` | Inventário de unidades (enriquecimento opcional) |
+| diário 12:30 | `pncp:sync-pca` | Sincroniza PCA dos órgãos ativos |
 
-`pncp:discover-unidades` **não** está agendado.
+`pncp:discover-unidades` está **agendado** para 20:00 (enriquecimento opcional; o sync de PCA não depende dessa tabela).
 
 ## Endpoints da API
 
