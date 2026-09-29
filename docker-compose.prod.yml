@@ -6,8 +6,9 @@
 # Este arquivo cuida apenas de teto de CPU e memória por container.
 #
 # Orçamento de memória (limites):
-#   postgres 14G | php 2.5G | worker 3×1.5G | redis 1.5G | nginx+scheduler 0.5G
-#   = 23G, deixando ~1G para o sistema operacional.
+#   postgres 14G | php 2G | worker 3×1G | redis-contratacoes 768M
+#   pca-worker 2×1G | redis-pca 768M | nginx + 2 schedulers ~0.75G
+#   ≈ 23G, deixando ~1G para o sistema operacional.
 #
 # Os tetos de CPU somam mais que 8 de propósito: são limites, não reservas.
 # Assim cada serviço aproveita a capacidade ociosa sem que um sozinho
@@ -28,7 +29,7 @@ services:
       resources:
         limits:
           cpus: "3.00"
-          memory: 2560M
+          memory: 2G
         reservations:
           memory: 512M
 
@@ -37,7 +38,7 @@ services:
       resources:
         limits:
           cpus: "2.00"
-          memory: 1536M
+          memory: 1G
         reservations:
           memory: 256M
 
@@ -56,6 +57,27 @@ services:
         reservations:
           memory: 64M
 
+  pca-scheduler:
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 256M
+        reservations:
+          memory: 64M
+
+  pca-worker: &pca-worker-resources
+    deploy:
+      resources:
+        limits:
+          cpus: "2.00"
+          memory: 1G
+        reservations:
+          memory: 256M
+
+  pca-worker-2:
+    <<: *pca-worker-resources
+
   postgres:
     deploy:
       resources:
@@ -69,12 +91,15 @@ services:
         reservations:
           memory: 8G
 
-  redis:
-    command: redis-server --appendonly yes --maxmemory 1024mb --maxmemory-policy noeviction
+  redis-contratacoes: &redis-resources
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy noeviction --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD precisa estar definida no .env da raiz do projeto (ao lado do docker-compose.yml)}
     deploy:
       resources:
         limits:
           cpus: "1.00"
-          memory: 1536M
+          memory: 768M
         reservations:
-          memory: 256M
+          memory: 128M
+
+  redis-pca:
+    <<: *redis-resources

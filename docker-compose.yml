@@ -9,7 +9,8 @@ x-php-app: &php-app
     context: .
     dockerfile: .docker/php/Dockerfile
   volumes:
-    - ./backend:/var/www/html
+    - ./contratacoes:/var/www/html
+    - ./pca:/opt/pca:ro
     - ./.docker/php/zz-custom.ini:/usr/local/etc/php/conf.d/zz-custom.ini
     - ./.docker/php/zz-fpm-tuning.conf:/usr/local/etc/php-fpm.d/zz-fpm-tuning.conf
   networks:
@@ -24,8 +25,41 @@ x-worker: &worker
   depends_on:
     postgres:
       condition: service_healthy
-    redis:
+    redis-contratacoes:
       condition: service_healthy
+
+x-pca-app: &pca-app
+  <<: *php-app
+  volumes:
+    - ./pca:/var/www/html
+    - ./contratacoes:/opt/contratacoes:ro
+    - ./.docker/php/zz-custom.ini:/usr/local/etc/php/conf.d/zz-custom.ini
+    - ./.docker/php/zz-fpm-tuning.conf:/usr/local/etc/php-fpm.d/zz-fpm-tuning.conf
+
+x-pca-worker: &pca-worker
+  <<: *pca-app
+  command: php -d memory_limit=512M artisan queue:work redis --sleep=3 --tries=5 --timeout=900 --memory=512 --max-jobs=50 --max-time=3600
+  stop_grace_period: 60s
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis-pca:
+      condition: service_healthy
+
+x-redis: &redis
+  image: redis:alpine
+  command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy noeviction --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD precisa estar definida no .env da raiz do projeto (ao lado do docker-compose.yml)}
+  networks:
+    - app-network
+  restart: unless-stopped
+  logging: *default-logging
+  healthcheck:
+    test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" --no-auth-warning ping"]
+    interval: 10s
+    timeout: 3s
+    retries: 5
+  environment:
+    REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD precisa estar definida no .env da raiz do projeto (ao lado do docker-compose.yml)}
 
 services:
   nginx:
@@ -33,7 +67,7 @@ services:
     ports:
       - "8000:80"
     volumes:
-      - ./backend:/var/www/html
+      - ./contratacoes:/var/www/html
       - ./.docker/nginx/default.conf:/etc/nginx/conf.d/default.conf
     depends_on:
       php:
@@ -54,7 +88,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      redis:
+      redis-contratacoes:
         condition: service_healthy
 
   worker:
@@ -70,7 +104,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      redis:
+      redis-contratacoes:
         condition: service_healthy
 
   postgres:
@@ -80,7 +114,7 @@ services:
       # Acesso externo (DBeaver etc.) via túnel SSH — ver instruções no chat.
       - "127.0.0.1:5432:5432"
     environment:
-      POSTGRES_DB: manipulate_data
+      POSTGRES_DB: pncp
       POSTGRES_USER: root
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD precisa estar definida no .env da raiz do projeto (ao lado do docker-compose.yml)}
     # O tuning fica no compose base (e não no overlay de produção) para valer
@@ -97,31 +131,39 @@ services:
     restart: unless-stopped
     logging: *default-logging
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U root -d manipulate_data"]
+      test: ["CMD-SHELL", "pg_isready -U root -d pncp"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 20s
 
-  redis:
-    image: redis:alpine
+  redis-contratacoes:
+    <<: *redis
     ports:
-      # Só escuta em 127.0.0.1 do host: não é alcançável pela internet.
       - "127.0.0.1:6379:6379"
-    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy noeviction --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD precisa estar definida no .env da raiz do projeto (ao lado do docker-compose.yml)}
     volumes:
-      - redis-data:/data
-    networks:
-      - app-network
-    restart: unless-stopped
-    logging: *default-logging
-    healthcheck:
-      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" --no-auth-warning ping"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
-    environment:
-      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD precisa estar definida no .env da raiz do projeto (ao lado do docker-compose.yml)}
+      - redis-contratacoes-data:/data
+
+  redis-pca:
+    <<: *redis
+    ports:
+      - "127.0.0.1:6380:6379"
+    volumes:
+      - redis-pca-data:/data
+
+  pca-scheduler:
+    <<: *pca-app
+    command: php artisan schedule:work
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis-pca:
+        condition: service_healthy
+
+  pca-worker:
+    <<: *pca-worker
+  pca-worker-2:
+    <<: *pca-worker
 
 networks:
   app-network:
@@ -129,4 +171,5 @@ networks:
 
 volumes:
   db-data:
-  redis-data:
+  redis-contratacoes-data:
+  redis-pca-data:
