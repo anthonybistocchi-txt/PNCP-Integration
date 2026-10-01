@@ -23,7 +23,8 @@ class CicloContratacaoRecorder
         int $totalAnunciado,
         int $totalPaginas,
         ?\DateTimeInterface $startedAt = null
-    ): CicloContratacao {
+    ): CicloContratacao
+    {
         return CicloContratacao::query()->updateOrCreate(
             ['sync_id' => $syncId],
             [
@@ -50,7 +51,8 @@ class CicloContratacaoRecorder
         string $dataInicial,
         string $dataFinal,
         ?\DateTimeInterface $startedAt = null
-    ): CicloContratacao {
+    ): CicloContratacao
+    {
         $now = now();
 
         return CicloContratacao::query()->create([
@@ -74,7 +76,9 @@ class CicloContratacaoRecorder
         int $paginasCompletas,
         string $status = CicloContratacao::STATUS_FINISHED
     ): void {
-        if ($syncId === '') {
+
+        if ($syncId === '')
+        {
             return;
         }
 
@@ -89,7 +93,8 @@ class CicloContratacaoRecorder
                 'updated_at'        => now(),
             ]);
 
-        if ($updated === 0) {
+        if ($updated === 0)
+        {
             Log::warning('PNCP_CONTRATACOES_CICLO_FINISH_MISSED', [
                 'sync_id'           => $syncId,
                 'itens_processados' => $itemsProcessados,
@@ -106,7 +111,8 @@ class CicloContratacaoRecorder
      */
     public function abandon(string $syncId, ?string $reason = null): void
     {
-        if ($syncId === '') {
+        if ($syncId === '')
+        {
             return;
         }
 
@@ -119,7 +125,8 @@ class CicloContratacaoRecorder
                 'updated_at'  => now(),
             ]);
 
-        if ($updated > 0) {
+        if ($updated > 0)
+        {
             Log::warning('PNCP_CONTRATACOES_CICLO_ABANDONED', [
                 'sync_id' => $syncId,
                 'reason'  => $reason,

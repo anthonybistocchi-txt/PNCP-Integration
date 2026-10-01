@@ -40,14 +40,14 @@ class Contratacao extends Model
 
     // Transforma o JSON do banco de volta para um objeto PHP magicamente
     protected $casts = [
-        'data_publicacao_pncp'       => 'datetime',
-        'data_atualizacao_global'    => 'datetime',
-        'data_abertura_proposta'     => 'datetime',
-        'data_encerramento_proposta' => 'datetime',
-        'documentos_sincronizados_em'       => 'datetime',
-        'srp'                        => 'boolean',
-        'payload_completo'           => 'object', // ou 'array' se preferir trabalhar com arrays assoc
-        'documentos'                 => 'array',
+        'data_publicacao_pncp'        => 'datetime',
+        'data_atualizacao_global'     => 'datetime',
+        'data_abertura_proposta'      => 'datetime',
+        'data_encerramento_proposta'  => 'datetime',
+        'documentos_sincronizados_em' => 'datetime',
+        'srp'                         => 'boolean',
+        'payload_completo'            => 'object', // ou 'array' se preferir trabalhar com arrays assoc
+        'documentos'                  => 'array',
     ];
 
     /**
@@ -57,7 +57,7 @@ class Contratacao extends Model
     protected function valorTotalEstimado(): Attribute
     {
         return Attribute::make(
-            get: fn(?int $value) => $value !== null ? $value / 100 : null,
+            get: fn(?int $value)           => $value !== null ? $value / 100 : null,
             set: fn(float|int|null $value) => $value !== null ? (int) round($value * 100) : null,
         );
     }

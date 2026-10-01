@@ -12,12 +12,12 @@ class SyncPcaActionTest extends TestCase
     public function test_upsert_idempotency()
     {
         $action = new SyncPcaPlanAction();
-        
+
         $plan = new PcaPlanData(
-            cnpjOrgao: '12345678000199',
-            anoPca: 2026,
+            cnpjOrgao:     '12345678000199',
+            anoPca:        2026,
             sequencialPca: 1,
-            situacaoPca: 'Aprovado'
+            situacaoPca:   'Aprovado'
         );
 
         // Primeiro upsert
@@ -26,16 +26,16 @@ class SyncPcaActionTest extends TestCase
 
         // Segundo upsert com alteração
         $plan2 = new PcaPlanData(
-            cnpjOrgao: '12345678000199',
-            anoPca: 2026,
+            cnpjOrgao:     '12345678000199',
+            anoPca:        2026,
             sequencialPca: 1,
-            situacaoPca: 'Cancelado'
+            situacaoPca:   'Cancelado'
         );
         $action->handle([$plan2]);
-        
+
         $this->assertDatabaseCount('planos_pca', 1);
         $this->assertDatabaseHas('planos_pca', [
-            'cnpj_orgao' => '12345678000199',
+            'cnpj_orgao'   => '12345678000199',
             'situacao_pca' => 'Cancelado'
         ]);
     }

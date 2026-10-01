@@ -12,17 +12,20 @@ class SyncPcaItemsAction
      */
     public function handle(array $items): void
     {
-        if (empty($items)) {
+        if (empty($items))
+        {
             return;
         }
 
         $upsertData = [];
 
-        foreach ($items as $item) {
+        foreach ($items as $item)
+        {
             $upsertData[] = $item->toArray();
         }
 
-        try {
+        try
+        {
             PcaItem::upsert(
                 $upsertData,
                 ['plano_pca_id', 'numero_item'],
@@ -52,10 +55,12 @@ class SyncPcaItemsAction
                     'data_atualizacao',
                 ]
             );
-        } catch (\Throwable $error) {
+        }
+        catch (\Throwable $error)
+        {
             Log::error('PNCP_PCA_ITEM_UPSERT_ERROR', [
-                'reason' => 'Falha ao executar Bulk Upsert de PcaItems',
-                'message' => $error->getMessage(),
+                'reason'     => 'Falha ao executar Bulk Upsert de PcaItems',
+                'message'    => $error->getMessage(),
                 'batch_size' => count($upsertData),
             ]);
 

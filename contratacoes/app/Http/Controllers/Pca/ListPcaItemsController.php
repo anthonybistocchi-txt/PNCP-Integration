@@ -26,10 +26,10 @@ class ListPcaItemsController extends Controller
         $items = PcaItemResource::collection($result->data);
 
         Log::info(json_encode([
-            'event'       => 'API_READ_SUCCESS',
-            'user_id'     => Auth::user()->id,
-            'filters'     => (array) $dto,
-            'results'     => [
+            'event'          => 'API_READ_SUCCESS',
+            'user_id'        => Auth::user()->id,
+            'filters'        => (array) $dto,
+            'results'        => [
                 'count_page' => $result->count_page,
                 'has_more'   => $result->has_more,
             ],

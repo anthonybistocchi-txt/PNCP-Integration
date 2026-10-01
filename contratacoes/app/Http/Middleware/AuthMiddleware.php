@@ -20,7 +20,7 @@ class AuthMiddleware
     {
         $token = $request->bearerToken() ?? $request->header('API_KEY') ?? $request->header('Authorization');
 
-        if (!$token) 
+        if (!$token)
         {
             $this->logAuthFailure($request, 'API_KEY ausente');
 
@@ -37,7 +37,7 @@ class AuthMiddleware
 
         $user = User::where('api_key', $token)->first();
 
-        if (!$user) 
+        if (!$user)
         {
             $this->logAuthFailure($request, 'API_KEY inválida');
 
@@ -49,7 +49,7 @@ class AuthMiddleware
             ], 401);
         }
 
-        if (!$user->isActive()) 
+        if (!$user->isActive())
         {
             $this->logAuthFailure($request, 'API_KEY inativa');
 

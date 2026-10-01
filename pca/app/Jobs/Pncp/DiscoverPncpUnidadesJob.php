@@ -40,47 +40,51 @@ class DiscoverPncpUnidadesJob implements ShouldQueue
         SyncPncpOrgaoUnidadesAction $syncAction,
         PncpFailureHandler $failureHandler
     ): void {
-        if ($failureHandler->shouldWait($this, "unidades_{$this->cnpj}", PncpCircuitBreaker::SCOPE_PCA)) {
+
+        if ($failureHandler->shouldWait($this, "unidades_{$this->cnpj}", PncpCircuitBreaker::SCOPE_PCA))
+        {
+            // se deve esperar, retorna
             return;
         }
 
-        try {
+        try
+        {
             $unidades = $client->getPcaUnidades($this->cnpj, $this->ano);
 
-            if (empty($unidades)) {
-                Log::info('PNCP_UNIDADES_DISCOVERED_EMPTY', [
-                    'cnpj' => $this->cnpj,
-                    'ano' => $this->ano,
-                ]);
+            if (empty($unidades))
+            {
+                // Log::info('PNCP_UNIDADES_DISCOVERED_EMPTY', [
+                //     'cnpj' => $this->cnpj,
+                //     'ano' => $this->ano,
+                // ]);
 
                 return;
             }
 
-            // /consolidado/unidades traz poder/esfera e codigo/nome, mas NÃO traz
+            // getPcaUnidades() traz poder/esfera e codigo/nome, mas NÃO traz
             // UF/IBGE/município. Esses campos vivem em unidadeOrgao das
-            // contratações — enriquecemos sem HTTP extra.
+            // contratações — enriquecemos sem HTTP extra apenas buscando no banco de dados.
             $geoByCodigo = $this->geoFromContratacoes();
 
             $unidadesData = [];
-            foreach ($unidades as $unidade) {
+            foreach ($unidades as $unidade)
+            {
                 $codigoUnidade = (string) ($unidade->codigoUnidade ?? '');
                 $geo = $geoByCodigo->get($codigoUnidade);
 
                 $unidadesData[] = new PncpOrgaoUnidadeData(
-                    cnpjOrgao: $this->cnpj,
-                    anoPca: $this->ano,
+                    cnpjOrgao:     $this->cnpj,
+                    anoPca:        $this->ano,
                     codigoUnidade: $codigoUnidade,
-                    nomeUnidade: $unidade->nomeUnidade ?? null,
-                    ufSigla: $unidade->ufSigla ?? $geo?->uf_sigla,
-                    codigoIbge: $this->intOrNull(
-                        $unidade->codigoIbge ?? $geo?->codigo_ibge ?? null
-                    ),
+                    nomeUnidade:   $unidade->nomeUnidade ?? null,
+                    ufSigla:       $unidade->ufSigla ?? $geo?->uf_sigla,
+                    codigoIbge:    $this->intOrNull($unidade->codigoIbge ?? $geo?->codigo_ibge ?? null),
                     nomeMunicipio: $unidade->nomeMunicipio
                         ?? $unidade->municipioNome
                         ?? $geo?->nome_municipio,
                     // API PCA: `poder`/`esfera`; contratações: `poderId`/`esferaId`.
-                    poder: $unidade->poder ?? $unidade->poderId ?? null,
-                    esfera: $unidade->esfera ?? $unidade->esferaId ?? null,
+                    poder:           $unidade->poder ?? $unidade->poderId ?? null, // se não tiver, usa o da contratação
+                    esfera:          $unidade->esfera ?? $unidade->esferaId ?? null, // se não tiver, usa o da contratação
                     payloadCompleto: $unidade
                 );
             }
@@ -88,15 +92,18 @@ class DiscoverPncpUnidadesJob implements ShouldQueue
             $syncAction->handle($unidadesData);
 
             Log::info('PNCP_UNIDADES_DISCOVERED', [
-                'cnpj' => $this->cnpj,
-                'ano' => $this->ano,
-                'count' => count($unidadesData),
+                'cnpj'         => $this->cnpj,
+                'ano'          => $this->ano,
+                'count'        => count($unidadesData),
                 'geo_enriched' => $geoByCodigo->count(),
             ]);
-        } catch (\Throwable $error) {
+
+        }
+        catch (\Throwable $error)
+        {
             $failureHandler->handle($error, $this, PncpCircuitBreaker::SCOPE_PCA, [
-                'action' => 'DiscoverPncpUnidadesJob',
-                'cnpj' => $this->cnpj,
+                'action'  => 'DiscoverPncpUnidadesJob',
+                'cnpj'    => $this->cnpj,
                 'attempt' => $this->attempts(),
             ]);
         }
@@ -128,7 +135,8 @@ class DiscoverPncpUnidadesJob implements ShouldQueue
 
     private function intOrNull(mixed $value): ?int
     {
-        if ($value === null || $value === '') {
+        if ($value === null || $value === '')
+        {
             return null;
         }
 

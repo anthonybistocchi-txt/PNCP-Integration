@@ -43,16 +43,16 @@ readonly class Keyset
     public static function pca(): self
     {
         return new self(
-            primaryColumn: 'itens_pca.data_publicacao_pncp',
+            primaryColumn:    'itens_pca.data_publicacao_pncp',
             primaryAttribute: 'data_publicacao_pncp',
-            primaryKey: 'date',
-            direction: 'desc',
-            tieColumn: 'itens_pca.id',
-            tieAttribute: 'id',
-            tieKey: 'id',
-            tieType: 'int',
-            primaryFormat: 'Y-m-d',
-            normalizeDate: false,
+            primaryKey:       'date',
+            direction:        'desc',
+            tieColumn:        'itens_pca.id',
+            tieAttribute:     'id',
+            tieKey:           'id',
+            tieType:          'int',
+            primaryFormat:    'Y-m-d',
+            normalizeDate:    false,
         );
     }
 
@@ -63,16 +63,16 @@ readonly class Keyset
     public static function contratacoes(): self
     {
         return new self(
-            primaryColumn: 'data_publicacao_pncp',
+            primaryColumn:    'data_publicacao_pncp',
             primaryAttribute: 'data_publicacao_pncp',
-            primaryKey: 'date',
-            direction: 'desc',
-            tieColumn: 'numero_controle_pncp',
-            tieAttribute: 'numero_controle_pncp',
-            tieKey: 'numero_controle',
-            tieType: 'string',
-            primaryFormat: 'Y-m-d H:i:s',
-            normalizeDate: true,
+            primaryKey:       'date',
+            direction:        'desc',
+            tieColumn:        'numero_controle_pncp',
+            tieAttribute:     'numero_controle_pncp',
+            tieKey:           'numero_controle',
+            tieType:          'string',
+            primaryFormat:    'Y-m-d H:i:s',
+            normalizeDate:    true,
         );
     }
 
@@ -83,14 +83,14 @@ readonly class Keyset
     public static function orgao(): self
     {
         return new self(
-            primaryColumn: 'cnpj',
+            primaryColumn:    'cnpj',
             primaryAttribute: 'cnpj',
-            primaryKey: 'cnpj',
-            direction: 'asc',
-            tieColumn: 'id',
-            tieAttribute: 'id',
-            tieKey: 'id',
-            tieType: 'int',
+            primaryKey:       'cnpj',
+            direction:        'asc',
+            tieColumn:        'id',
+            tieAttribute:     'id',
+            tieKey:           'id',
+            tieType:          'int',
         );
     }
 }

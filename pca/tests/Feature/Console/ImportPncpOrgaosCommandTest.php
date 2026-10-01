@@ -19,7 +19,8 @@ class ImportPncpOrgaosCommandTest extends TestCase
         ]));
         $repository->shouldReceive('manualCnpjs')->andReturn(collect(['22222222000122' => '22222222000122']));
         $repository->shouldReceive('autoImportedCnpjs')->andReturn(collect());
-        $repository->shouldReceive('upsertMany')->andReturnUsing(function (array $rows) use (&$capturedRows) {
+        $repository->shouldReceive('upsertMany')->andReturnUsing(function (array $rows) use (&$capturedRows)
+        {
             $capturedRows = $rows;
         });
 

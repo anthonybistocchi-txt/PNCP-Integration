@@ -99,15 +99,16 @@ class PncpCircuitBreaker
         $failures    = $this->bumpFailures($scope);
         $threshold   = max(1, (int) config('pncp.breaker.server_error_threshold'));
 
-        if ($failures < $threshold && ! $wasHalfOpen) {
+        if ($failures < $threshold && ! $wasHalfOpen)
+        {
             return false;
         }
 
         $this->open(
-            scope: $scope,
-            seconds: $this->nextBackoffSeconds($scope, 'pncp.breaker.server_error_backoff'),
-            reason: $wasHalfOpen ? 'sondagem_falhou' : 'falhas_consecutivas',
-            failures: $failures,
+            scope:       $scope,
+            seconds:     $this->nextBackoffSeconds($scope, 'pncp.breaker.server_error_backoff'),
+            reason:      $wasHalfOpen ? 'sondagem_falhou' : 'falhas_consecutivas',
+            failures:    $failures,
             wasHalfOpen: $wasHalfOpen
         );
 
@@ -128,10 +129,10 @@ class PncpCircuitBreaker
         $escalonado = $this->nextBackoffSeconds($scope, 'pncp.breaker.rate_limit_backoff');
 
         $this->open(
-            scope: $scope,
-            seconds: $retryAfter !== null && $retryAfter > 0 ? $retryAfter : $escalonado,
-            reason: $retryAfter !== null ? 'retry_after_header' : 'rate_limit',
-            failures: $failures,
+            scope:       $scope,
+            seconds:     $retryAfter !== null && $retryAfter > 0 ? $retryAfter : $escalonado,
+            reason:      $retryAfter !== null ? 'retry_after_header' : 'rate_limit',
+            failures:    $failures,
             wasHalfOpen: $wasHalfOpen
         );
 
@@ -143,7 +144,8 @@ class PncpCircuitBreaker
      */
     public function recordSuccess(string $scope): void
     {
-        if ($this->isHalfOpen($scope)) {
+        if ($this->isHalfOpen($scope))
+        {
             Log::info('PNCP_BREAKER_CLOSED', [
                 'scope'  => $scope,
                 'reason' => 'Sondagem bem-sucedida, requisições liberadas.',
@@ -176,28 +178,29 @@ class PncpCircuitBreaker
         $prolongedOutages = $wasHalfOpen ? $this->bumpProlongedOutages($scope) : $this->resetProlongedOutages($scope);
         $threshold        = max(1, (int) config('pncp.breaker.prolonged_outage_threshold'));
 
-        if ($wasHalfOpen && $prolongedOutages >= $threshold) {
+        if ($wasHalfOpen && $prolongedOutages >= $threshold)
+        {
             $seconds = max($seconds, (int) config('pncp.breaker.prolonged_outage_backoff_minutes') * 60);
 
             Log::critical('PNCP_PROLONGED_OUTAGE', [
-                'scope'              => $scope,
-                'reason'             => $reason,
-                'seconds'            => $seconds,
-                'level'              => $this->level($scope),
-                'consecutive_failures' => $failures,
+                'scope'                     => $scope,
+                'reason'                    => $reason,
+                'seconds'                   => $seconds,
+                'level'                     => $this->level($scope),
+                'consecutive_failures'      => $failures,
                 'sondagens_falhas_seguidas' => $prolongedOutages,
-                'message'            => "PNCP ({$scope}) segue indisponível após {$prolongedOutages} sondagens seguidas. Pausa estendida para reduzir ruído.",
+                'message'                   => "PNCP ({$scope}) segue indisponível após {$prolongedOutages} sondagens seguidas. Pausa estendida para reduzir ruído.",
             ]);
         }
 
         $this->openFor($scope, $seconds);
 
         Log::warning('PNCP_BREAKER_OPENED', [
-            'scope'               => $scope,
-            'reason'              => $reason,
-            'seconds'             => $seconds,
-            'level'               => $this->level($scope),
-            'consecutive_failures'=> $failures,
+            'scope'                => $scope,
+            'reason'               => $reason,
+            'seconds'              => $seconds,
+            'level'                => $this->level($scope),
+            'consecutive_failures' => $failures,
         ]);
     }
 
@@ -227,7 +230,8 @@ class PncpCircuitBreaker
     {
         $scale = (array) config($configKey);
 
-        if ($scale === []) {
+        if ($scale === [])
+        {
             $scale = [(int) config('pncp.circuit_breaker_minutes', 2)];
         }
 

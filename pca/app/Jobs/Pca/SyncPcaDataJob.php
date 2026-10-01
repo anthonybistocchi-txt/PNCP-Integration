@@ -15,6 +15,7 @@ use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
+use Illuminate\Queue\MaxAttemptsExceededException;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -49,80 +50,90 @@ class SyncPcaDataJob implements ShouldQueue, ShouldBeUnique
         PncpFailureHandler $failureHandler,
         SyncPcaPlanAction $upsertAction
     ): void {
+
         Log::withContext(['job_id' => $this->job ? $this->job->getJobId() : 'master-pca']);
 
         $startedAt = now();
 
-        if ($failureHandler->shouldWait($this, 'Job Mestre PCA', PncpCircuitBreaker::SCOPE_PCA)) {
+        if ($failureHandler->shouldWait($this, 'Job Mestre PCA', PncpCircuitBreaker::SCOPE_PCA))
+        {
             return;
         }
 
-        try {
+        try
+        {
             // `/consolidado` é um resumo do órgão (objeto único). A lista de
             // planos (sequencial + unidade) vem de `/consolidado/unidades`.
-            $unidades = $client->getPcaUnidades($this->dto->cnpj, $this->dto->ano);
+            $pcaUnidadesOrgaos = $client->getPcaUnidades($this->dto->cnpj, $this->dto->ano);
+
             $circuitBreaker->recordSuccess(PncpCircuitBreaker::SCOPE_PCA);
 
-            if ($unidades === []) {
-                Log::info('PNCP_PCA_FINISHED_EMPTY', [
-                    'cnpj' => $this->dto->cnpj,
-                    'ano' => $this->dto->ano,
-                ]);
+            if ($pcaUnidadesOrgaos === [])
+            {
+                // Log::info('PNCP_PCA_FINISHED_EMPTY', [
+                //     'cnpj' => $this->dto->cnpj,
+                //     'ano'  => $this->dto->ano,
+                // ]);
                 return;
             }
 
             $this->syncId = (string) Str::uuid();
             PncpPcaCiclo::create([
-                'sync_id' => $this->syncId,
+                'sync_id'    => $this->syncId,
                 'cnpj_orgao' => $this->dto->cnpj,
-                'ano_pca' => $this->dto->ano,
-                'status' => PncpPcaCiclo::STATUS_STARTED,
+                'ano_pca'    => $this->dto->ano,
+                'status'     => PncpPcaCiclo::STATUS_STARTED,
                 'started_at' => $startedAt,
             ]);
 
             $plans = [];
-            foreach ($unidades as $data) {
-                if (! is_object($data)) {
+            foreach ($pcaUnidadesOrgaos as $pca)
+            {
+                if (! is_object($pca))
+                {
                     continue;
                 }
 
-                $sequencial = (int) ($data->sequencialPca ?? 0);
-                if ($sequencial <= 0) {
+                $sequencial = (int) ($pca->sequencialPca ?? 0);
+                if ($sequencial <= 0)
+                {
                     continue;
                 }
 
                 $plans[] = new PcaPlanData(
-                    cnpjOrgao: $this->dto->cnpj,
-                    anoPca: $this->dto->ano,
-                    sequencialPca: $sequencial,
-                    codigoUnidade: $data->codigoUnidade ?? $data->unidadeOrgao->codigoUnidade ?? null,
-                    nomeUnidade: $data->nomeUnidade ?? $data->unidadeOrgao->nomeUnidade ?? null,
-                    situacaoPca: $data->situacaoPca ?? null,
-                    dataPublicacaoPncp: $data->dataPublicacaoPncp ?? null,
-                    dataInclusao: $data->dataInclusao ?? null,
-                    dataAtualizacao: $data->dataAtualizacao ?? null,
-                    payloadCompleto: $data
+                    cnpjOrgao:          $this->dto->cnpj,
+                    anoPca:             $this->dto->ano,
+                    sequencialPca:      $sequencial,
+                    codigoUnidade:      $pca->codigoUnidade ?? $pca->unidadeOrgao->codigoUnidade ?? null,
+                    nomeUnidade:        $pca->nomeUnidade ?? $pca->unidadeOrgao->nomeUnidade ?? null,
+                    situacaoPca:        $pca->situacaoPca ?? null,
+                    dataPublicacaoPncp: $pca->dataPublicacaoPncp ?? null,
+                    dataInclusao:       $pca->dataInclusao ?? null,
+                    dataAtualizacao:    $pca->dataAtualizacao ?? null,
+                    payloadCompleto:    $pca
                 );
             }
 
-            if ($plans === []) {
+            if ($plans === [])
+            {
                 PncpPcaCiclo::where('sync_id', $this->syncId)->update([
-                    'status' => PncpPcaCiclo::STATUS_EMPTY,
+                    'status'      => PncpPcaCiclo::STATUS_EMPTY,
                     'finished_at' => now(),
                 ]);
 
-                Log::info('PNCP_PCA_FINISHED_EMPTY', [
-                    'cnpj' => $this->dto->cnpj,
-                    'ano' => $this->dto->ano,
-                    'reason' => 'unidades sem sequencialPca',
-                ]);
+                // Log::info('PNCP_PCA_FINISHED_EMPTY', [
+                //     'cnpj'   => $this->dto->cnpj,
+                //     'ano'    => $this->dto->ano,
+                //     'reason' => 'unidades sem sequencialPca',
+                // ]);
 
                 return;
             }
 
             $upsertAction->handle($plans);
 
-            foreach ($plans as $plan) {
+            foreach ($plans as $plan)
+            {
                 SyncPcaItemsJob::dispatch(
                     $this->dto->cnpj,
                     $this->dto->ano,
@@ -134,30 +145,44 @@ class SyncPcaDataJob implements ShouldQueue, ShouldBeUnique
             // A contagem de itens/páginas vive no nível do plano; aqui o ciclo
             // de órgão se encerra assim que o fan-out é concluído.
             PncpPcaCiclo::where('sync_id', $this->syncId)->update([
-                'status' => PncpPcaCiclo::STATUS_FINISHED,
+                'status'      => PncpPcaCiclo::STATUS_FINISHED,
                 'finished_at' => now(),
             ]);
 
-        } catch (\Throwable $error) {
+        }
+        catch (\Throwable $error)
+        {
             $failureHandler->handle($error, $this, PncpCircuitBreaker::SCOPE_PCA, [
-                'action' => 'SyncPcaDataJob',
+                'action'  => 'SyncPcaDataJob',
                 'attempt' => $this->attempts(),
-                'cnpj' => $this->dto->cnpj,
-                'ano' => $this->dto->ano,
+                'cnpj'    => $this->dto->cnpj,
+                'ano'     => $this->dto->ano,
             ]);
         }
     }
 
     public function failed(\Throwable $exception): void
     {
-        if ($this->syncId === '') {
+        if ($exception instanceof MaxAttemptsExceededException)
+        {
+            Log::error('PNCP_PCA_ABANDONED', [
+                'cnpj'      => $this->dto->cnpj,
+                'ano'       => $this->dto->ano,
+                'exception' => $exception::class,
+                'message'   => $exception->getMessage(),
+                'reason'    => 'Job Mestre do PCA esgotou a janela de retentativa antes de concluir a sincronização deste órgão. O próximo ciclo agendado tenta de novo.',
+            ]);
+        }
+
+        if ($this->syncId === '')
+        {
             return;
         }
 
         PncpPcaCiclo::where('sync_id', $this->syncId)
             ->where('status', PncpPcaCiclo::STATUS_STARTED)
             ->update([
-                'status' => PncpPcaCiclo::STATUS_ABANDONED,
+                'status'      => PncpPcaCiclo::STATUS_ABANDONED,
                 'finished_at' => now(),
             ]);
     }

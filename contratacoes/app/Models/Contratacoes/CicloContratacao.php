@@ -29,13 +29,13 @@ class CicloContratacao extends Model
     ];
 
     protected $casts = [
-        'modalidade'         => 'integer',
-        'total_anunciado'    => 'integer',
-        'total_paginas'      => 'integer',
-        'itens_processados'  => 'integer',
-        'paginas_completas'  => 'integer',
-        'started_at'         => 'datetime',
-        'finished_at'        => 'datetime',
+        'modalidade'        => 'integer',
+        'total_anunciado'   => 'integer',
+        'total_paginas'     => 'integer',
+        'itens_processados' => 'integer',
+        'paginas_completas' => 'integer',
+        'started_at'        => 'datetime',
+        'finished_at'       => 'datetime',
     ];
 
     /**
@@ -46,13 +46,16 @@ class CicloContratacao extends Model
     {
         $limiteStarted = now()->subHours($contratacoesRetryHours);
 
-        return $query->where(function (Builder $q) use ($limiteStarted) {
+        return $query->where(function (Builder $q) use ($limiteStarted)
+        {
             $q->where('status', self::STATUS_ABANDONED)
-                ->orWhere(function (Builder $q2) {
+                ->orWhere(function (Builder $q2)
+                {
                     $q2->where('status', self::STATUS_FINISHED)
                         ->whereColumn('itens_processados', '<', 'total_anunciado');
                 })
-                ->orWhere(function (Builder $q3) use ($limiteStarted) {
+                ->orWhere(function (Builder $q3) use ($limiteStarted)
+                {
                     $q3->where('status', self::STATUS_STARTED)
                         ->where('started_at', '<=', $limiteStarted);
                 });
@@ -61,18 +64,21 @@ class CicloContratacao extends Model
 
     public function isGap(int $contratacoesRetryHours = 12): bool
     {
-        if ($this->status === self::STATUS_ABANDONED) {
+        if ($this->status === self::STATUS_ABANDONED)
+        {
             return true;
         }
 
-        if ($this->status === self::STATUS_FINISHED && $this->itens_processados < $this->total_anunciado) {
+        if ($this->status === self::STATUS_FINISHED && $this->itens_processados < $this->total_anunciado)
+        {
             return true;
         }
 
         if ($this->status === self::STATUS_STARTED
             && $this->started_at !== null
             && $this->started_at->lte(now()->subHours($contratacoesRetryHours))
-        ) {
+        )
+        {
             return true;
         }
 

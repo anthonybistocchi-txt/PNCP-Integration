@@ -35,20 +35,26 @@ class HealthCheckController extends Controller
 
     private function checkDatabase(): string
     {
-        try {
+        try
+        {
             DB::select('SELECT 1');
             return 'ok';
-        } catch (\Throwable) {
+        }
+        catch (\Throwable)
+        {
             return 'unavailable';
         }
     }
 
     private function checkCache(): string
     {
-        try {
+        try
+        {
             Cache::store('redis')->put('_health_check', 1, 5);
             return 'ok';
-        } catch (\Throwable) {
+        }
+        catch (\Throwable)
+        {
             return 'unavailable';
         }
     }

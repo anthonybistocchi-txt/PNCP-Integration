@@ -9,7 +9,8 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('itens_pca', function (Blueprint $table) {
+        Schema::create('itens_pca', function (Blueprint $table)
+        {
             $table->id();
             $table->foreignId('plano_pca_id')->constrained('planos_pca')->onDelete('cascade');
             $table->integer('numero_item');
@@ -56,7 +57,8 @@ return new class extends Migration
             $table->index(['plano_pca_id', 'grupo_contratacao_codigo']);
         });
 
-        if (DB::connection()->getDriverName() !== 'pgsql') {
+        if (DB::connection()->getDriverName() !== 'pgsql')
+        {
             return;
         }
 

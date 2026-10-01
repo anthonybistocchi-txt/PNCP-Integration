@@ -15,16 +15,17 @@ class AdminUserSeeder extends Seeder
     {
         $apiKey = env('ADMIN_API_KEY');
 
-        if (!$apiKey) {
+        if (!$apiKey)
+        {
             $this->command->warn('A variável de ambiente ADMIN_API_KEY não está definida no arquivo .env.');
         }
 
         User::updateOrCreate(
             ['email' => 'administrador@gmail.com'], // Cria se não existir, ou atualiza se já existir
             [
-                'name' => 'Administrador',
+                'name'     => 'Administrador',
                 'password' => Hash::make('Onb00697@'), // Senha padrão
-                'api_key' => $apiKey,
+                'api_key'  => $apiKey,
             ]
         );
     }

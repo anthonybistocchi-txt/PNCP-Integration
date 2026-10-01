@@ -25,14 +25,14 @@ class GetOrgaoEndpointTest extends TestCase
         Orgao::create(['cnpj' => '12345678000199', 'razao_social' => 'Órgão A', 'ativo' => true]);
 
         $plan = PcaPlan::create([
-            'cnpj_orgao' => '12345678000199',
-            'ano_pca' => 2026,
+            'cnpj_orgao'     => '12345678000199',
+            'ano_pca'        => 2026,
             'sequencial_pca' => 1,
         ]);
 
         PcaItem::create([
-            'plano_pca_id' => $plan->id,
-            'numero_item' => 1,
+            'plano_pca_id'   => $plan->id,
+            'numero_item'    => 1,
             'descricao_item' => 'Notebook',
         ]);
 
@@ -52,10 +52,10 @@ class GetOrgaoEndpointTest extends TestCase
         $apiKey = (string) Str::uuid();
 
         User::create([
-            'name' => 'Test User',
-            'email' => 'test@example.com',
+            'name'     => 'Test User',
+            'email'    => 'test@example.com',
             'password' => 'secret123',
-            'api_key' => $apiKey,
+            'api_key'  => $apiKey,
         ]);
 
         $response = $this->json('QUERY', '/api/v1/orgaos/00000000000000', [], ['API_KEY' => $apiKey]);

@@ -15,7 +15,8 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('orgaos', function (Blueprint $table) {
+        Schema::create('orgaos', function (Blueprint $table)
+        {
             $table->id();
             $table->string('cnpj', 14)->unique();
             $table->string('razao_social', 255)->nullable();

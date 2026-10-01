@@ -37,12 +37,12 @@ class SyncPcaItemsJobTest extends TestCase
         Bus::assertDispatchedTimes(ProcessPcaItemsPageJob::class, 3);
 
         $this->assertDatabaseHas('ciclos_pca', [
-            'cnpj_orgao' => '12345678000199',
-            'ano_pca' => 2026,
-            'sequencial_pca' => 1,
+            'cnpj_orgao'      => '12345678000199',
+            'ano_pca'         => 2026,
+            'sequencial_pca'  => 1,
             'total_anunciado' => 120,
-            'total_paginas' => 3,
-            'status' => 'started',
+            'total_paginas'   => 3,
+            'status'          => 'started',
         ]);
     }
 
@@ -65,10 +65,10 @@ class SyncPcaItemsJobTest extends TestCase
         Bus::assertNotDispatched(ProcessPcaItemsPageJob::class);
 
         $this->assertDatabaseHas('ciclos_pca', [
-            'cnpj_orgao' => '12345678000199',
-            'ano_pca' => 2026,
+            'cnpj_orgao'     => '12345678000199',
+            'ano_pca'        => 2026,
             'sequencial_pca' => 1,
-            'status' => 'empty',
+            'status'         => 'empty',
         ]);
     }
 }

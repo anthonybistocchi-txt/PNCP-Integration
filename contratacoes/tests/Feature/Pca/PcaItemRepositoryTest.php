@@ -13,28 +13,28 @@ class PcaItemRepositoryTest extends TestCase
     public function test_filter_by_ano()
     {
         $plan2026 = PcaPlan::create([
-            'cnpj_orgao' => '111',
-            'ano_pca' => 2026,
-            'sequencial_pca' => 1,
+            'cnpj_orgao'           => '111',
+            'ano_pca'              => 2026,
+            'sequencial_pca'       => 1,
             'data_publicacao_pncp' => now(),
         ]);
 
         PcaItem::create([
-            'plano_pca_id' => $plan2026->id,
-            'numero_item' => 1,
+            'plano_pca_id'   => $plan2026->id,
+            'numero_item'    => 1,
             'descricao_item' => 'Notebook 2026',
         ]);
 
         $plan2027 = PcaPlan::create([
-            'cnpj_orgao' => '111',
-            'ano_pca' => 2027,
-            'sequencial_pca' => 2,
+            'cnpj_orgao'           => '111',
+            'ano_pca'              => 2027,
+            'sequencial_pca'       => 2,
             'data_publicacao_pncp' => now(),
         ]);
 
         PcaItem::create([
-            'plano_pca_id' => $plan2027->id,
-            'numero_item' => 1,
+            'plano_pca_id'   => $plan2027->id,
+            'numero_item'    => 1,
             'descricao_item' => 'Notebook 2027',
         ]);
 
@@ -50,17 +50,18 @@ class PcaItemRepositoryTest extends TestCase
     public function test_keyset_pagination_returns_cursor_without_duplicates()
     {
         $plan = PcaPlan::create([
-            'cnpj_orgao' => '111',
-            'ano_pca' => 2026,
-            'sequencial_pca' => 1,
+            'cnpj_orgao'           => '111',
+            'ano_pca'              => 2026,
+            'sequencial_pca'       => 1,
             'data_publicacao_pncp' => now(),
         ]);
 
-        for ($i = 1; $i <= 3; $i++) {
+        for ($i = 1; $i <= 3; $i++)
+        {
             PcaItem::create([
-                'plano_pca_id' => $plan->id,
-                'numero_item' => $i,
-                'descricao_item' => "Item {$i}",
+                'plano_pca_id'         => $plan->id,
+                'numero_item'          => $i,
+                'descricao_item'       => "Item {$i}",
                 'data_publicacao_pncp' => now()->subDays($i),
             ]);
         }
@@ -76,8 +77,8 @@ class PcaItemRepositoryTest extends TestCase
         $this->assertSame(3, $firstPage->count);
 
         $secondPage = $repository->list(new ListPcaItemsDTO(
-            ano: 2026,
-            limit: 2,
+            ano:    2026,
+            limit:  2,
             cursor: $firstPage->next_cursor,
         ));
 

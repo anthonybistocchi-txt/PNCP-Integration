@@ -120,12 +120,12 @@ return [
     | `documents_lote_size` contra o $timeout do ProcessDocumentoPageJob.
     |
     */
-    'http' => [
-        'connect_timeout' => (int) env('PNCP_HTTP_CONNECT_TIMEOUT', 5),
-        'timeout'         => (int) env('PNCP_HTTP_TIMEOUT', 40),
-        'document_timeout'=> (int) env('PNCP_HTTP_DOCUMENT_TIMEOUT', 30),
-        'retries'         => (int) env('PNCP_HTTP_RETRIES', 2),
-        'retry_sleep_ms'  => (int) env('PNCP_HTTP_RETRY_SLEEP_MS', 3000),
+    'http'                 => [
+        'connect_timeout'  => (int) env('PNCP_HTTP_CONNECT_TIMEOUT', 5),
+        'timeout'          => (int) env('PNCP_HTTP_TIMEOUT', 40),
+        'document_timeout' => (int) env('PNCP_HTTP_DOCUMENT_TIMEOUT', 30),
+        'retries'          => (int) env('PNCP_HTTP_RETRIES', 2),
+        'retry_sleep_ms'   => (int) env('PNCP_HTTP_RETRY_SLEEP_MS', 3000),
     ],
 
     /*
@@ -166,7 +166,7 @@ return [
     | ficar limpo por alguns dias e quisermos mais velocidade, baixar para 1.
     |
     */
-    'throttle' => [
+    'throttle'                 => [
         'min_interval_seconds' => (int) env('PNCP_MIN_INTERVAL_SECONDS', 2),
         'block_seconds'        => (int) env('PNCP_THROTTLE_BLOCK_SECONDS', 30),
     ],
@@ -184,7 +184,7 @@ return [
     | meio. A janela ruim observada em produção durou ~26 minutos.
     |
     */
-    'breaker' => [
+    'breaker'                    => [
         'server_error_threshold' => (int) env('PNCP_BREAKER_5XX_THRESHOLD', 3),
         'server_error_backoff'   => [1, 3, 10, 20],
         'rate_limit_backoff'     => [2, 5, 10, 20],
@@ -195,8 +195,8 @@ return [
         // A partir deste tanto de sondagens falhas seguidas no nível máximo,
         // a pausa passa a ser esta (bem maior), reduzindo ruído/carga durante
         // uma degradação real e sinalizando o incidente com Log::critical.
-        'prolonged_outage_threshold'      => (int) env('PNCP_BREAKER_PROLONGED_OUTAGE_THRESHOLD', 3),
-        'prolonged_outage_backoff_minutes'=> (int) env('PNCP_BREAKER_PROLONGED_OUTAGE_BACKOFF_MINUTES', 60),
+        'prolonged_outage_threshold'       => (int) env('PNCP_BREAKER_PROLONGED_OUTAGE_THRESHOLD', 3),
+        'prolonged_outage_backoff_minutes' => (int) env('PNCP_BREAKER_PROLONGED_OUTAGE_BACKOFF_MINUTES', 60),
     ],
 
     /*
@@ -231,9 +231,9 @@ return [
     |
     */
     'retry_until_hours' => [
-        'contratacoes' => (int) env('PNCP_RETRY_UNTIL_HOURS_CONTRATACOES', 12),
-        'pca'          => (int) env('PNCP_RETRY_UNTIL_HOURS_PCA', 12),
-        'documentos' => (int) env('PNCP_RETRY_UNTIL_HOURS_DOCUMENTOS', 2),
+        'contratacoes'  => (int) env('PNCP_RETRY_UNTIL_HOURS_CONTRATACOES', 12),
+        'pca'           => (int) env('PNCP_RETRY_UNTIL_HOURS_PCA', 12),
+        'documentos'    => (int) env('PNCP_RETRY_UNTIL_HOURS_DOCUMENTOS', 2),
     ],
 
     /*
@@ -245,7 +245,7 @@ return [
     | represadas não voltem todas no mesmo instante.
     |
     */
-    'jitter' => [
+    'jitter'          => [
         'resume_min'  => 5,
         'resume_max'  => 45,
         'contend_min' => 30,

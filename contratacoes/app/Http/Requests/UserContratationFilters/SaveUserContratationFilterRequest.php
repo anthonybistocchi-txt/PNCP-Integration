@@ -17,9 +17,9 @@ class SaveUserContratationFilterRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'filter_type'   => ['required', 'string', Rule::in(UserContratationFilter::TYPES)],
-            'values'        => 'required|array|min:1',
-            'values.*'      => 'required|string|max:100',
+            'filter_type' => ['required', 'string', Rule::in(UserContratationFilter::TYPES)],
+            'values'      => 'required|array|min:1',
+            'values.*'    => 'required|string|max:100',
         ];
     }
 
@@ -45,9 +45,9 @@ class SaveUserContratationFilterRequest extends FormRequest
         ))));
 
         return new SaveUserContratationFilterDTO(
-            userId: $userId,
+            userId:     $userId,
             filterType: $this->validated('filter_type'),
-            values: $filterValues,
+            values:     $filterValues,
         );
     }
 }

@@ -23,7 +23,8 @@ class SyncContratacoesFaltantesCommand extends Command
     {
         $ciclos = $this->getCiclosIncompletos();
 
-        if ($ciclos->isEmpty()) {
+        if ($ciclos->isEmpty())
+        {
             $this->info('Nenhum ciclo incompleto encontrado.');
 
             return self::SUCCESS;
@@ -31,15 +32,16 @@ class SyncContratacoesFaltantesCommand extends Command
 
         $this->info("Reprocessando {$ciclos->count()} intervalo(s) incompleto(s).");
 
-        foreach ($ciclos as $ciclo) {
+        foreach ($ciclos as $ciclo)
+        {
             $dto = new ListContratacoesDTO(
-                dataInicial: $ciclo->data_inicial,
-                dataFinal: $ciclo->data_final,
+                dataInicial:                 $ciclo->data_inicial,
+                dataFinal:                   $ciclo->data_final,
                 codigoModalidadeContratacao: (int) $ciclo->modalidade,
-                uf: null,
-                codigoMunicipioIbge: null,
-                cursor: null,
-                limit: 50,
+                uf:                          null,
+                codigoMunicipioIbge:         null,
+                cursor:                      null,
+                limit:                       50,
             );
 
             SyncContratacoesJob::dispatch($dto);

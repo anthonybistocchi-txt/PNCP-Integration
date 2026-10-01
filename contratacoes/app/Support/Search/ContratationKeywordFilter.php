@@ -21,13 +21,15 @@ final class ContratationKeywordFilter
     public function apply(Builder $query, array $includeKeywords, array $excludeKeywords): Builder
     {
         return $query
-            ->when($includeKeywords !== [], function ($query) use ($includeKeywords) {
+            ->when($includeKeywords !== [], function ($query) use ($includeKeywords)
+            {
                 $query->whereRaw(
                     $this->expression($includeKeywords),
                     $includeKeywords
                 );
             })
-            ->when($excludeKeywords !== [], function ($query) use ($excludeKeywords) {
+            ->when($excludeKeywords !== [], function ($query) use ($excludeKeywords)
+            {
                 $query->whereRaw(
                     'NOT ('.$this->expression($excludeKeywords).')',
                     $excludeKeywords

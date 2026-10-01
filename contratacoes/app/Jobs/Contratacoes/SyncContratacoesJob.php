@@ -85,13 +85,15 @@ class SyncContratacoesJob implements ShouldQueue, ShouldBeUnique
         PncpSyncCycleTracker $cycleTracker,
         CicloContratacaoRecorder $cicloRecorder
     ): void {
+
         Log::withContext([
             'job_id' => $this->job ? $this->job->getJobId() : 'master',
         ]);
 
         $startedAt = now();
 
-        if ($failureHandler->shouldWait($this, 'Job Mestre', PncpCircuitBreaker::SCOPE_CONTRATACOES)) {
+        if ($failureHandler->shouldWait($this, 'Job Mestre', PncpCircuitBreaker::SCOPE_CONTRATACOES))
+        {
             return;
         }
 
@@ -108,13 +110,15 @@ class SyncContratacoesJob implements ShouldQueue, ShouldBeUnique
             'tamanhoPagina'               => $tamanhoPagina,
         ]);
 
-        try {
+        try
+        {
             $response = $client->getContratacoes($queryParams);
 
             // A API respondeu: qualquer pausa em curso pode ser encerrada.
             $circuitBreaker->recordSuccess(PncpCircuitBreaker::SCOPE_CONTRATACOES);
 
-            if (! $response || empty($response->data)) {
+            if (! $response || empty($response->data))
+            {
                 $cicloRecorder->recordEmpty(
                     $this->dto->codigoModalidadeContratacao,
                     $this->dto->dataInicial,
@@ -161,7 +165,8 @@ class SyncContratacoesJob implements ShouldQueue, ShouldBeUnique
 
             $staggerSeconds = max(0, (int) config('pncp.page_stagger_seconds', 0));
 
-            for ($pagina = 1; $pagina <= $totalPaginas; $pagina++) {
+            for ($pagina = 1; $pagina <= $totalPaginas; $pagina++)
+            {
                 $job = ProcessContratacaoPageJob::dispatch(
                     $this->dto,
                     $pagina,
@@ -170,11 +175,14 @@ class SyncContratacoesJob implements ShouldQueue, ShouldBeUnique
                     $startedAt->toIso8601String()
                 );
 
-                if ($staggerSeconds > 0) {
+                if ($staggerSeconds > 0)
+                {
                     $job->delay(now()->addSeconds(($pagina - 1) * $staggerSeconds));
                 }
             }
-        } catch (\Throwable $error) {
+        }
+        catch (\Throwable $error)
+        {
             $failureHandler->handle($error, $this, PncpCircuitBreaker::SCOPE_CONTRATACOES, [
                 'action'      => 'SyncContratacoesJob',
                 'attempt'     => $this->attempts(),
@@ -191,7 +199,8 @@ class SyncContratacoesJob implements ShouldQueue, ShouldBeUnique
      */
     public function failed(\Throwable $exception): void
     {
-        if ($this->syncId === '') {
+        if ($this->syncId === '')
+        {
             return;
         }
 

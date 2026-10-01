@@ -13,32 +13,35 @@ class SyncPncpOrgaoUnidadesAction
      */
     public function handle(array $unidadesData): void
     {
-        if (empty($unidadesData)) {
+        if (empty($unidadesData))
+        {
             return;
         }
 
         $now = now();
         $upsertData = [];
 
-        foreach ($unidadesData as $data) {
+        foreach ($unidadesData as $data)
+        {
             $upsertData[] = [
-                'cnpj_orgao' => $data->cnpjOrgao,
-                'ano_pca' => $data->anoPca,
-                'codigo_unidade' => $data->codigoUnidade,
-                'nome_unidade' => $data->nomeUnidade,
-                'uf_sigla' => $data->ufSigla,
-                'codigo_ibge' => $data->codigoIbge,
-                'nome_municipio' => $data->nomeMunicipio,
-                'poder' => $data->poder,
-                'esfera' => $data->esfera,
-                'ativo' => true,
+                'cnpj_orgao'       => $data->cnpjOrgao,
+                'ano_pca'          => $data->anoPca,
+                'codigo_unidade'   => $data->codigoUnidade,
+                'nome_unidade'     => $data->nomeUnidade,
+                'uf_sigla'         => $data->ufSigla,
+                'codigo_ibge'      => $data->codigoIbge,
+                'nome_municipio'   => $data->nomeMunicipio,
+                'poder'            => $data->poder,
+                'esfera'           => $data->esfera,
+                'ativo'            => true,
                 'payload_completo' => json_encode($data->payloadCompleto),
-                'created_at' => $now,
-                'updated_at' => $now,
+                'created_at'       => $now,
+                'updated_at'       => $now,
             ];
         }
 
-        DB::transaction(function () use ($upsertData) {
+        DB::transaction(function () use ($upsertData)
+        {
             PncpOrgaoUnidade::upsert(
                 $upsertData,
                 ['cnpj_orgao', 'ano_pca', 'codigo_unidade'],

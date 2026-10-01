@@ -31,7 +31,8 @@ class ContratacaoRepository
     public function list(ListContratacoesDTO $dto): PaginatedResultDTO
     {
         $query = Contratacao::query()
-            ->when($dto->dataInicial && $dto->dataFinal, function ($query) use ($dto) {
+            ->when($dto->dataInicial && $dto->dataFinal, function ($query) use ($dto)
+            {
                 $colunaData = $dto->tipoData === 'atualizacao' ? 'data_atualizacao_global' : 'data_publicacao_pncp';
 
                 $query->whereBetween($colunaData, [
@@ -58,7 +59,8 @@ class ContratacaoRepository
      */
     public function searchPersonalized(PersonalizedContratacaoFiltersDTO $filters, ListRelevantContratacoesDTO $dto): PaginatedResultDTO
     {
-        if ($filters->hasNoActiveFilters()) {
+        if ($filters->hasNoActiveFilters())
+        {
             return $this->emptyResult();
         }
 
@@ -67,15 +69,18 @@ class ContratacaoRepository
 
         $query = Contratacao::query()
             ->whereIn('situacao_compra_id', $situacoesCompraPermitidas)
-            ->when($filters->uf, fn ($query, $ufsPermitidas) => $query->whereIn('uf', $ufsPermitidas))
-            ->when($filters->codigoModalidadeContratacao, fn ($query, $modalidadesPermitidas) => $query->whereIn('codigo_modalidade_contratacao', $modalidadesPermitidas))
-            ->when($filters->poderId, fn ($query, $poderesPermitidos) => $query->whereIn('payload_completo->orgaoEntidade->poderId', $poderesPermitidos))
-            ->when($filters->esferaId, fn ($query, $esferasPermitidas) => $query->whereIn('payload_completo->orgaoEntidade->esferaId', $esferasPermitidas))
-            ->when($filters->modoDisputaId, fn ($query, $modosDisputaPermitidos) => $query->whereIn('payload_completo->modoDisputaId', $modosDisputaPermitidos))
+            ->when($filters->uf, fn ($query, $ufsPermitidas)                                             => $query->whereIn('uf', $ufsPermitidas))
+            ->when($filters->codigoModalidadeContratacao, fn ($query, $modalidadesPermitidas)            => $query->whereIn('codigo_modalidade_contratacao', $modalidadesPermitidas))
+            ->when($filters->poderId, fn ($query, $poderesPermitidos)                                    => $query->whereIn('payload_completo->orgaoEntidade->poderId', $poderesPermitidos))
+            ->when($filters->esferaId, fn ($query, $esferasPermitidas)                                   => $query->whereIn('payload_completo->orgaoEntidade->esferaId', $esferasPermitidas))
+            ->when($filters->modoDisputaId, fn ($query, $modosDisputaPermitidos)                         => $query->whereIn('payload_completo->modoDisputaId', $modosDisputaPermitidos))
             ->when($filters->tipoInstrumentoConvocatorioCodigo, fn ($query, $tiposInstrumentoPermitidos) => $query->whereIn('payload_completo->tipoInstrumentoConvocatorioCodigo', $tiposInstrumentoPermitidos))
-            ->when($filters->fontesOrcamentarias, function ($query, $fontesOrcamentariasPermitidas) {
-                $query->where(function ($query) use ($fontesOrcamentariasPermitidas) {
-                    foreach ($fontesOrcamentariasPermitidas as $codigoFonteOrcamentaria) {
+            ->when($filters->fontesOrcamentarias, function ($query, $fontesOrcamentariasPermitidas)
+            {
+                $query->where(function ($query) use ($fontesOrcamentariasPermitidas)
+                {
+                    foreach ($fontesOrcamentariasPermitidas as $codigoFonteOrcamentaria)
+                    {
                         $query->orWhereJsonContains('payload_completo->fontesOrcamentarias', ['codigo' => (int) $codigoFonteOrcamentaria]);
                     }
                 });
@@ -93,12 +98,12 @@ class ContratacaoRepository
     private function emptyResult(): PaginatedResultDTO
     {
         return new PaginatedResultDTO(
-            data: collect([]),
-            page: 1,
-            count_page: 0,
-            count: 0,
+            data:        collect([]),
+            page:        1,
+            count_page:  0,
+            count:       0,
             next_cursor: null,
-            has_more: false,
+            has_more:    false,
         );
     }
 

@@ -13,22 +13,24 @@ class JobExceptionPolicy
 {
     public function handle(Throwable $e, object $job, array $context = []): void
     {
-        if ($this->isTransient($e)) {
+        if ($this->isTransient($e))
+        {
             Log::warning('JOB_TRANSIENT_ERROR', array_merge($context, [
                 'exception' => get_class($e),
                 'message'   => $e->getMessage(),
             ]));
-            
+
             // Re-throw so Laravel's queue worker handles the retry (using backoff)
             throw $e;
         }
 
-        if ($this->isPermanent($e)) {
+        if ($this->isPermanent($e))
+        {
             Log::error('JOB_PERMANENT_ERROR', array_merge($context, [
                 'exception' => get_class($e),
                 'message'   => $e->getMessage(),
             ]));
-            
+
             $job->fail($e);
             return;
         }
@@ -38,26 +40,30 @@ class JobExceptionPolicy
             'exception' => get_class($e),
             'message'   => $e->getMessage(),
         ]));
-        
+
         $job->fail($e);
     }
 
     private function isTransient(Throwable $e): bool
     {
-        if ($e instanceof ConnectionException) {
+        if ($e instanceof ConnectionException)
+        {
             return true;
         }
 
-        if ($e instanceof RequestException) {
+        if ($e instanceof RequestException)
+        {
             $status = $e->response->status();
             return in_array($status, [429, 500, 502, 503, 504]);
         }
 
-        if ($e instanceof QueryException && $this->isDeadlock($e)) {
+        if ($e instanceof QueryException && $this->isDeadlock($e))
+        {
             return true;
         }
 
-        if ($e instanceof PDOException && $this->isConnectionError($e)) {
+        if ($e instanceof PDOException && $this->isConnectionError($e))
+        {
             return true;
         }
 
@@ -66,7 +72,8 @@ class JobExceptionPolicy
 
     private function isPermanent(Throwable $e): bool
     {
-        if ($e instanceof RequestException) {
+        if ($e instanceof RequestException)
+        {
             $status = $e->response->status();
             return in_array($status, [400, 401, 403, 404]);
         }
@@ -83,7 +90,7 @@ class JobExceptionPolicy
     private function isConnectionError(PDOException $e): bool
     {
         $message = strtolower($e->getMessage());
-        return str_contains($message, 'connection refused') || 
+        return str_contains($message, 'connection refused') ||
                str_contains($message, 'server has gone away') ||
                str_contains($message, 'could not connect to server');
     }

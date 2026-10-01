@@ -16,7 +16,7 @@ class ListOrgaosRequest extends FormRequest
     {
         return [
             'cursor' => ['nullable', 'string'],
-            'limit' => ['nullable', 'integer', 'min:1', 'max:50'],
+            'limit'  => ['nullable', 'integer', 'min:1', 'max:50'],
         ];
     }
 
@@ -26,7 +26,7 @@ class ListOrgaosRequest extends FormRequest
 
         return new ListOrgaosDTO(
             cursor: $validated['cursor'] ?? null,
-            limit: (int) ($validated['limit'] ?? 15),
+            limit:  (int) ($validated['limit'] ?? 15),
         );
     }
 }

@@ -8,7 +8,8 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('palavras_chave', function (Blueprint $table) {
+        Schema::create('palavras_chave', function (Blueprint $table)
+        {
             $table->id();
             $table->foreignId('user_id')->constrained()->cascadeOnDelete();
             $table->string('keyword');

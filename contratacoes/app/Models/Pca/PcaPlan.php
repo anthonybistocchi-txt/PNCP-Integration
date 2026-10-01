@@ -24,9 +24,9 @@ class PcaPlan extends Model
 
     protected $casts = [
         'data_publicacao_pncp' => 'date',
-        'data_inclusao' => 'datetime',
-        'data_atualizacao' => 'datetime',
-        'payload_completo' => 'object',
+        'data_inclusao'        => 'datetime',
+        'data_atualizacao'     => 'datetime',
+        'payload_completo'     => 'object',
     ];
 
     public function itens(): HasMany

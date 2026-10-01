@@ -28,17 +28,17 @@ class SaveUserKeywordRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'id.nullable'            => 'O ID deve ser um número inteiro.',
-            'keyword.required_without' => 'Informe keyword ou keywords.',
-            'keyword.string'         => 'A palavra-chave deve ser um texto.',
-            'keyword.max'            => 'A palavra-chave não pode ter mais de 255 caracteres.',
+            'id.nullable'               => 'O ID deve ser um número inteiro.',
+            'keyword.required_without'  => 'Informe keyword ou keywords.',
+            'keyword.string'            => 'A palavra-chave deve ser um texto.',
+            'keyword.max'               => 'A palavra-chave não pode ter mais de 255 caracteres.',
             'keywords.required_without' => 'Informe keywords ou keyword.',
-            'keywords.array'         => 'As palavras-chave devem ser enviadas em um array.',
-            'keywords.min'           => 'Informe ao menos uma palavra-chave.',
-            'keywords.*.required'    => 'Cada palavra-chave é obrigatória.',
-            'keywords.*.string'      => 'Cada palavra-chave deve ser um texto.',
-            'keywords.*.max'         => 'Cada palavra-chave não pode ter mais de 255 caracteres.',
-            'type.in'                => 'O tipo deve ser "include" ou "exclude".',
+            'keywords.array'            => 'As palavras-chave devem ser enviadas em um array.',
+            'keywords.min'              => 'Informe ao menos uma palavra-chave.',
+            'keywords.*.required'       => 'Cada palavra-chave é obrigatória.',
+            'keywords.*.string'         => 'Cada palavra-chave deve ser um texto.',
+            'keywords.*.max'            => 'Cada palavra-chave não pode ter mais de 255 caracteres.',
+            'type.in'                   => 'O tipo deve ser "include" ou "exclude".',
         ];
     }
 
@@ -51,10 +51,10 @@ class SaveUserKeywordRequest extends FormRequest
         ))));
 
         return new SaveUserKeywordDTO(
-            userId: $userId,
+            userId:   $userId,
             keywords: $keywords,
-            type: $this->validated('type') ?? UserKeyword::TYPE_INCLUDE,
-            id: $this->validated('id') ?? $id
+            type:     $this->validated('type') ?? UserKeyword::TYPE_INCLUDE,
+            id:       $this->validated('id') ?? $id
         );
     }
 }

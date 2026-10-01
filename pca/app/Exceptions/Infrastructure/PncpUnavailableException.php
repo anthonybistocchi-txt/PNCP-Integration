@@ -18,12 +18,13 @@ class PncpUnavailableException extends PncpApiException
         int $statusCode = 503,
         ?Response $response = null,
         ?\Throwable $previous = null
-    ) {
+    )
+    {
         parent::__construct(
-            message: $message,
+            message:    $message,
             statusCode: $statusCode,
-            response: $response,
-            previous: $previous
+            response:   $response,
+            previous:   $previous
         );
     }
 }

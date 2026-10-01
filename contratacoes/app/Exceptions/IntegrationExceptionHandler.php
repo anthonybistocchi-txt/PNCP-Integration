@@ -17,7 +17,8 @@ class IntegrationExceptionHandler
     public function __invoke(Throwable $e): ?bool
     {
         // 1. Timeout de conexão (cURL error 28)
-        if ($e instanceof ConnectionException) {
+        if ($e instanceof ConnectionException)
+        {
             Log::error('PNCP_TIMEOUT', [
                 'status_code' => 408,
                 'reason'      => 'A API demorou muito para responder ou a conexão falhou (Timeout).',
@@ -28,7 +29,8 @@ class IntegrationExceptionHandler
         }
 
         // 2. Erros HTTP da API do PNCP (503, 500, 429, etc)
-        if ($e instanceof RequestException) {
+        if ($e instanceof RequestException)
+        {
             $response = $e->response;
 
             $status = $response->status();
@@ -36,9 +38,12 @@ class IntegrationExceptionHandler
             $body   = $response->body();
 
             // Se o PNCP retornar HTML (ex: página de erro 503 do Nginx/Cloudflare)
-            if (str_starts_with(trim(strtolower($body)), '<html')) {
+            if (str_starts_with(trim(strtolower($body)), '<html'))
+            {
                 $reason = "O Servidor do PNCP retornou uma página HTML de erro (provável instabilidade na infraestrutura deles).";
-            } else {
+            }
+            else
+            {
                 $decoded = json_decode($body, true);
                 $reason  = $decoded ?? $body;
             }
@@ -56,10 +61,11 @@ class IntegrationExceptionHandler
         }
 
         // 3. Job esgotou todas as tentativas e foi descartado da fila
-        if ($e instanceof MaxAttemptsExceededException) {
+        if ($e instanceof MaxAttemptsExceededException)
+        {
             Log::error('JOB_MAX_ATTEMPTS_EXCEEDED', [
-                'reason'     => 'O Job foi descartado permanentemente após esgotar todas as tentativas configuradas.',
-                'job'        => $e->getMessage(),
+                'reason' => 'O Job foi descartado permanentemente após esgotar todas as tentativas configuradas.',
+                'job'    => $e->getMessage(),
             ]);
 
             return false;

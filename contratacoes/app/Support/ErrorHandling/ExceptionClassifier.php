@@ -18,7 +18,8 @@ class ExceptionClassifier
 {
     public function classify(Throwable $e): ApiError
     {
-        return match (true) {
+        return match (true)
+        {
             $e instanceof ResourceNotFoundException                      => ApiError::notFound($e->getMessage()),
             $e instanceof ResourceConflictException                      => ApiError::conflict($e->getMessage()),
             $e instanceof BusinessRuleException                          => ApiError::businessRule($e->getMessage()),
@@ -29,14 +30,14 @@ class ExceptionClassifier
             $e instanceof AuthenticationException                        => ApiError::authenticationRequired(),
             $e instanceof ThrottleRequestsException                      => ApiError::rateLimitExceeded(),
             $e instanceof HttpExceptionInterface                         => $this->fromHttpException($e),
-            default                                                      => ApiError::internalError(),   
+            default                                                      => ApiError::internalError(),
         };
     }
 
     private function isConnectionError(Throwable $e): bool
     {
         $message = strtolower($e->getMessage());
-        return str_contains($message, 'connection refused') || 
+        return str_contains($message, 'connection refused') ||
                str_contains($message, 'server has gone away') ||
                str_contains($message, 'could not connect to server');
     }
@@ -44,16 +45,17 @@ class ExceptionClassifier
     private function fromHttpException(HttpExceptionInterface $e): ApiError
     {
         $statusCode = $e->getStatusCode();
-        
-        return match ($statusCode) {
-            401 => ApiError::authenticationRequired($e->getMessage() ?: 'Autenticação necessária para acessar este recurso.'),
-            403 => ApiError::forbidden($e->getMessage() ?: 'Você não tem permissão para acessar este recurso.'),
-            404 => ApiError::notFound($e->getMessage() ?: 'Recurso não encontrado.'),
-            429 => ApiError::rateLimitExceeded($e->getMessage() ?: 'Muitas requisições.'),
+
+        return match ($statusCode)
+        {
+            401     => ApiError::authenticationRequired($e->getMessage() ?: 'Autenticação necessária para acessar este recurso.'),
+            403     => ApiError::forbidden($e->getMessage() ?: 'Você não tem permissão para acessar este recurso.'),
+            404     => ApiError::notFound($e->getMessage() ?: 'Recurso não encontrado.'),
+            429     => ApiError::rateLimitExceeded($e->getMessage() ?: 'Muitas requisições.'),
             default => new ApiError(
-                error: 'http_error_' . $statusCode,
-                message: $e->getMessage() ?: 'Erro HTTP ' . $statusCode,
-                details: [],
+                error:      'http_error_' . $statusCode,
+                message:    $e->getMessage() ?: 'Erro HTTP ' . $statusCode,
+                details:    [],
                 httpStatus: $statusCode
             )
         };

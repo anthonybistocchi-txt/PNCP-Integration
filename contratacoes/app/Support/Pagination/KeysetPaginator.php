@@ -37,7 +37,8 @@ class KeysetPaginator
         $totalCount = $baseQuery->count();
         $currentPage = 1;
 
-        if ($cursorData !== null) {
+        if ($cursorData !== null)
+        {
             $primaryValue = $cursorData['primary'];
             $tieValue = $cursorData['tie'] ?? null;
 
@@ -63,12 +64,12 @@ class KeysetPaginator
         $nextCursor = $this->buildNextCursor($itemsPage, $limit, $k);
 
         return new PaginatedResultDTO(
-            data: $itemsPage,
-            page: $currentPage,
-            count_page: $itemsPage->count(),
-            count: $totalCount,
+            data:        $itemsPage,
+            page:        $currentPage,
+            count_page:  $itemsPage->count(),
+            count:       $totalCount,
             next_cursor: $nextCursor,
-            has_more: $nextCursor !== null,
+            has_more:    $nextCursor !== null,
         );
     }
 
@@ -88,8 +89,10 @@ class KeysetPaginator
         $gtOp = $k->direction === 'desc' ? '>' : '<';
 
         $q->where($k->primaryColumn, $gtOp, $primaryValue)
-            ->when($k->tieColumn !== null && $tieValue !== null, function ($q) use ($k, $primaryValue, $tieValue) {
-                $q->orWhere(function ($q) use ($k, $primaryValue, $tieValue) {
+            ->when($k->tieColumn !== null && $tieValue !== null, function ($q) use ($k, $primaryValue, $tieValue)
+            {
+                $q->orWhere(function ($q) use ($k, $primaryValue, $tieValue)
+                {
                     $q->where($k->primaryColumn, '=', $primaryValue)
                         ->where($k->tieColumn, '<=', $tieValue);
                 });
@@ -108,8 +111,10 @@ class KeysetPaginator
         $ltOp = $k->direction === 'desc' ? '<' : '>';
 
         $q->where($k->primaryColumn, $ltOp, $primaryValue)
-            ->when($k->tieColumn !== null && $tieValue !== null, function ($q) use ($k, $primaryValue, $tieValue) {
-                $q->orWhere(function ($q) use ($k, $primaryValue, $tieValue) {
+            ->when($k->tieColumn !== null && $tieValue !== null, function ($q) use ($k, $primaryValue, $tieValue)
+            {
+                $q->orWhere(function ($q) use ($k, $primaryValue, $tieValue)
+                {
                     $q->where($k->primaryColumn, '=', $primaryValue)
                         ->where($k->tieColumn, '>', $tieValue);
                 });
@@ -126,7 +131,8 @@ class KeysetPaginator
      */
     private function buildNextCursor(Collection $items, int $limit, Keyset $k): ?string
     {
-        if ($items->count() < $limit) {
+        if ($items->count() < $limit)
+        {
             return null;
         }
 
@@ -134,17 +140,21 @@ class KeysetPaginator
         $primaryValue = $last->{$k->primaryAttribute};
 
         // Formata o valor da coluna primária (geralmente uma data).
-        if ($k->primaryFormat !== null) {
+        if ($k->primaryFormat !== null)
+        {
             $primaryFormatted = $primaryValue instanceof \DateTimeInterface
                 ? $primaryValue->format($k->primaryFormat)
                 : (string) $primaryValue;
-        } else {
+        }
+        else
+        {
             $primaryFormatted = (string) $primaryValue;
         }
 
         $payload = [$k->primaryKey => $primaryFormatted];
 
-        if ($k->tieKey !== null && $k->tieAttribute !== null) {
+        if ($k->tieKey !== null && $k->tieAttribute !== null)
+        {
             $tieValue = $last->{$k->tieAttribute};
             $payload[$k->tieKey] = $k->tieType === 'int' ? (int) $tieValue : (string) $tieValue;
         }
@@ -158,13 +168,15 @@ class KeysetPaginator
      */
     private function decodeToArray(?string $cursor, Keyset $k): ?array
     {
-        if (! $cursor) {
+        if (! $cursor)
+        {
             return null;
         }
 
         $decoded = json_decode($this->base64urlDecode($cursor), true);
 
-        if (! is_array($decoded) || empty($decoded[$k->primaryKey])) {
+        if (! is_array($decoded) || empty($decoded[$k->primaryKey]))
+        {
             return null;
         }
 
@@ -176,7 +188,8 @@ class KeysetPaginator
             : $primaryRaw;
 
         $tieValue = null;
-        if ($k->tieKey !== null && isset($decoded[$k->tieKey])) {
+        if ($k->tieKey !== null && isset($decoded[$k->tieKey]))
+        {
             $tieValue = $k->tieType === 'int'
                 ? (int) $decoded[$k->tieKey]
                 : (string) $decoded[$k->tieKey];
@@ -204,7 +217,8 @@ class KeysetPaginator
         $normalized = strtr(str_replace(' ', '+', $cursor), '-_', '+/');
         $padding = strlen($normalized) % 4;
 
-        if ($padding > 0) {
+        if ($padding > 0)
+        {
             $normalized .= str_repeat('=', 4 - $padding);
         }
 

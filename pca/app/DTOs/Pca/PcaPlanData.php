@@ -20,16 +20,16 @@ final class PcaPlanData
     public function toArray(): array
     {
         return [
-            'cnpj_orgao' => $this->cnpjOrgao,
-            'ano_pca' => $this->anoPca,
-            'sequencial_pca' => $this->sequencialPca,
-            'codigo_unidade' => $this->codigoUnidade,
-            'nome_unidade' => $this->nomeUnidade,
-            'situacao_pca' => $this->situacaoPca,
+            'cnpj_orgao'           => $this->cnpjOrgao,
+            'ano_pca'              => $this->anoPca,
+            'sequencial_pca'       => $this->sequencialPca,
+            'codigo_unidade'       => $this->codigoUnidade,
+            'nome_unidade'         => $this->nomeUnidade,
+            'situacao_pca'         => $this->situacaoPca,
             'data_publicacao_pncp' => $this->dataPublicacaoPncp,
-            'data_inclusao' => $this->dataInclusao,
-            'data_atualizacao' => $this->dataAtualizacao,
-            'payload_completo' => $this->payloadCompleto ? json_encode($this->payloadCompleto) : null,
+            'data_inclusao'        => $this->dataInclusao,
+            'data_atualizacao'     => $this->dataAtualizacao,
+            'payload_completo'     => $this->payloadCompleto ? json_encode($this->payloadCompleto) : null,
         ];
     }
 }

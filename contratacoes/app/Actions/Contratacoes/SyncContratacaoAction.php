@@ -12,18 +12,18 @@ class SyncContratacaoAction
      */
     public function handle(array $pncpItems): void
     {
-        if (empty($pncpItems)) 
+        if (empty($pncpItems))
         {
             return;
         }
 
         $upsertData = [];
 
-        foreach ($pncpItems as $pncpItem) 
+        foreach ($pncpItems as $pncpItem)
         {
             $numeroControle = $pncpItem->numeroControlePNCP ?? null;
 
-            if (!$numeroControle) 
+            if (!$numeroControle)
             {
                 continue;
             }
@@ -31,7 +31,7 @@ class SyncContratacaoAction
             $upsertData[] = $this->mapData($pncpItem);
         }
 
-        if (empty($upsertData)) 
+        if (empty($upsertData))
         {
             return;
         }
@@ -68,10 +68,10 @@ class SyncContratacaoAction
         catch (\Throwable $error)
         {
             Log::error('PNCP_UPSERT_DB_ERROR', [
-                'reason'       => 'Falha ao executar o Bulk Upsert no banco de dados.',
-                'message'      => $error->getMessage(),
-                'batch_size'   => count($upsertData),
-                'sample_key'   => $upsertData[0]['numero_controle_pncp'] ?? 'N/A',
+                'reason'     => 'Falha ao executar o Bulk Upsert no banco de dados.',
+                'message'    => $error->getMessage(),
+                'batch_size' => count($upsertData),
+                'sample_key' => $upsertData[0]['numero_controle_pncp'] ?? 'N/A',
             ]);
 
             throw $error;
@@ -121,15 +121,18 @@ class SyncContratacaoAction
 
         $documentos = $data->documentos ?? null;
 
-        if (is_array($documentos) && $documentos !== []) {
+        if (is_array($documentos) && $documentos !== [])
+        {
             $primeiro = $documentos[0];
             $candidates[] = is_object($primeiro)
                 ? ($primeiro->sequencialCompra ?? $primeiro->sequencial_compra ?? null)
                 : (is_array($primeiro) ? ($primeiro['sequencialCompra'] ?? $primeiro['sequencial_compra'] ?? null) : null);
         }
 
-        foreach ($candidates as $candidate) {
-            if ($candidate === null || $candidate === '') {
+        foreach ($candidates as $candidate)
+        {
+            if ($candidate === null || $candidate === '')
+            {
                 continue;
             }
 
@@ -138,7 +141,8 @@ class SyncContratacaoAction
 
         $numeroControle = (string) ($data->numeroControlePNCP ?? '');
 
-        if ($numeroControle !== '' && preg_match('/-(\d+)\/\d{4}$/', $numeroControle, $matches) === 1) {
+        if ($numeroControle !== '' && preg_match('/-(\d+)\/\d{4}$/', $numeroControle, $matches) === 1)
+        {
             return (int) $matches[1];
         }
 

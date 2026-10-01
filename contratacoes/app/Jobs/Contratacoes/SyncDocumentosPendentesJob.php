@@ -99,14 +99,15 @@ class SyncDocumentosPendentesJob implements ShouldQueue, ShouldBeUnique
             ->get()
             ->toArray();
 
-        if (empty($records)) {
-            Log::info('PNCP_DOCUMENTOS_EMPTY', [
-                'source'           => 'pendentes',
-                'modalidade'       => $this->modalidade,
-                'status'           => 'empty',
-                'total_records'    => 0,
-                'duration_seconds' => $startedAt->diffInSeconds(now()),
-            ]);
+        if (empty($records))
+        {
+            // Log::info('PNCP_DOCUMENTOS_EMPTY', [
+            //     'source'           => 'pendentes',
+            //     'modalidade'       => $this->modalidade,
+            //     'status'           => 'empty',
+            //     'total_records'    => 0,
+            //     'duration_seconds' => $startedAt->diffInSeconds(now()),
+            // ]);
 
             return;
         }
@@ -122,7 +123,8 @@ class SyncDocumentosPendentesJob implements ShouldQueue, ShouldBeUnique
         // buscando. Ver PncpSyncCycleTracker::tryStartModalidade — foi essa
         // falta de coordenação que fez a varredura das 09h duplicar trabalho
         // sobre a Fase 2 ainda em andamento em 11/09.
-        if (! $cycleTracker->tryStartModalidade($this->modalidade, $syncId)) {
+        if (! $cycleTracker->tryStartModalidade($this->modalidade, $syncId))
+        {
             Log::warning('PNCP_DOCUMENTOS_SKIPPED_COLLISION', [
                 'source'         => 'pendentes',
                 'modalidade'     => $this->modalidade,
@@ -145,7 +147,8 @@ class SyncDocumentosPendentesJob implements ShouldQueue, ShouldBeUnique
             'started_at'    => $startedAt->toIso8601String(),
         ]);
 
-        foreach ($lotes as $lote) {
+        foreach ($lotes as $lote)
+        {
             ProcessDocumentoPageJob::dispatch(
                 $lote,
                 $syncId,

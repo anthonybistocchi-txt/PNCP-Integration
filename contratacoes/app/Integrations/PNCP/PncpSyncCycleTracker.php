@@ -48,18 +48,21 @@ class PncpSyncCycleTracker
      */
     public function markPageDone(string $syncId, int $itemsProcessed = 0): ?array
     {
-        if ($syncId === '') {
+        if ($syncId === '')
+        {
             return null;
         }
 
-        if ($itemsProcessed > 0) {
+        if ($itemsProcessed > 0)
+        {
             Cache::increment($this->itemsKey($syncId), $itemsProcessed);
         }
 
         $done  = (int) Cache::increment($this->doneKey($syncId));
         $total = (int) Cache::get($this->totalKey($syncId), 0);
 
-        if ($total > 0 && $done === $total) {
+        if ($total > 0 && $done === $total)
+        {
             return [
                 'units_completed' => $done,
                 'items_processed' => (int) Cache::get($this->itemsKey($syncId), 0),
@@ -114,7 +117,8 @@ class PncpSyncCycleTracker
     {
         $key = $this->modalidadeActiveKey($modalidade);
 
-        if (Cache::get($key) === $syncId) {
+        if (Cache::get($key) === $syncId)
+        {
             Cache::forget($key);
         }
     }

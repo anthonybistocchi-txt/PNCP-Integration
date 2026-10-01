@@ -31,7 +31,8 @@ class PncpFailureHandler
      */
     public function shouldWait(object $job, string $label, string $scope): bool
     {
-        if ($this->breaker->isOpen($scope)) {
+        if ($this->breaker->isOpen($scope))
+        {
             $delay = $this->breaker->remainingSeconds($scope) + $this->jitter('resume');
             $job->release($delay);
 
@@ -40,7 +41,8 @@ class PncpFailureHandler
 
         // Pausa vencida: apenas um job sonda a API. Se outro já pegou o lock,
         // este espera o resultado em vez de repetir a enxurrada.
-        if ($this->breaker->isHalfOpen($scope) && ! $this->breaker->acquireProbe($scope)) {
+        if ($this->breaker->isHalfOpen($scope) && ! $this->breaker->acquireProbe($scope))
+        {
             $delay = $this->jitter('contend');
             $job->release($delay);
 
@@ -55,7 +57,8 @@ class PncpFailureHandler
      */
     public function handle(Throwable $error, object $job, string $scope, array $context = []): bool
     {
-        if ($error instanceof PncpRateLimitedException) {
+        if ($error instanceof PncpRateLimitedException)
+        {
             $this->breaker->recordRateLimit($scope, $error->retryAfter);
 
             Log::warning('PNCP_RATE_LIMITED', array_merge($context, [
@@ -69,7 +72,8 @@ class PncpFailureHandler
             return true;
         }
 
-        if ($error instanceof PncpUnavailableException || $error instanceof ConnectionException) {
+        if ($error instanceof PncpUnavailableException || $error instanceof ConnectionException)
+        {
             $opened = $this->breaker->recordServerFailure($scope);
 
             Log::warning('PNCP_UPSTREAM_UNAVAILABLE', array_merge($context, [

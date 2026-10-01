@@ -28,21 +28,22 @@ class ListRelevantContratacoesAction
         $keywordsGroupedByType = $this->keywordService->listGroupedByType($userId);
         [$includeKeywords, $excludeKeywords] = $this->keywordsForMode($keywordsGroupedByType, $mode);
 
-        if ($this->missingRequiredKeywords($mode, $includeKeywords, $excludeKeywords)) {
+        if ($this->missingRequiredKeywords($mode, $includeKeywords, $excludeKeywords))
+        {
             return $this->emptyResult();
         }
 
         $filters = new PersonalizedContratacaoFiltersDTO(
-            uf:                                 $filtersGroupedByType['uf'] ?? [],
-            codigoModalidadeContratacao:        $filtersGroupedByType['codigoModalidadeContratacao'] ?? [],
-            poderId:                            $filtersGroupedByType['poderId'] ?? [],
-            esferaId:                           $filtersGroupedByType['esferaId'] ?? [],
-            situacaoCompraId:                   $filtersGroupedByType['situacaoCompraId'] ?? [],
-            modoDisputaId:                      $filtersGroupedByType['modoDisputaId'] ?? [],
-            tipoInstrumentoConvocatorioCodigo:  $filtersGroupedByType['tipoInstrumentoConvocatorioCodigo'] ?? [],
-            fontesOrcamentarias:                $filtersGroupedByType['fontesOrcamentarias'] ?? [],
-            includeKeywords:                    $includeKeywords,
-            excludeKeywords:                    $excludeKeywords,
+            uf:                                $filtersGroupedByType['uf'] ?? [],
+            codigoModalidadeContratacao:       $filtersGroupedByType['codigoModalidadeContratacao'] ?? [],
+            poderId:                           $filtersGroupedByType['poderId'] ?? [],
+            esferaId:                          $filtersGroupedByType['esferaId'] ?? [],
+            situacaoCompraId:                  $filtersGroupedByType['situacaoCompraId'] ?? [],
+            modoDisputaId:                     $filtersGroupedByType['modoDisputaId'] ?? [],
+            tipoInstrumentoConvocatorioCodigo: $filtersGroupedByType['tipoInstrumentoConvocatorioCodigo'] ?? [],
+            fontesOrcamentarias:               $filtersGroupedByType['fontesOrcamentarias'] ?? [],
+            includeKeywords:                   $includeKeywords,
+            excludeKeywords:                   $excludeKeywords,
         );
 
         return $this->contratacoesService->getPersonalized($filters, $dto);
@@ -60,7 +61,8 @@ class ListRelevantContratacoesAction
         $includeKeywords = $keywordsGroupedByType[UserKeyword::TYPE_INCLUDE] ?? [];
         $excludeKeywords = $keywordsGroupedByType[UserKeyword::TYPE_EXCLUDE] ?? [];
 
-        return match ($mode) {
+        return match ($mode)
+        {
             KeywordMatchMode::Include => [$includeKeywords, []],
             KeywordMatchMode::Exclude => [[], $excludeKeywords],
             KeywordMatchMode::Both    => [$includeKeywords, $excludeKeywords],
@@ -80,7 +82,8 @@ class ListRelevantContratacoesAction
         array $includeKeywords,
         array $excludeKeywords
     ): bool {
-        return match ($mode) {
+        return match ($mode)
+        {
             KeywordMatchMode::Include => $includeKeywords === [],
             KeywordMatchMode::Exclude => $excludeKeywords === [], // mantido para completude do enum
             KeywordMatchMode::Both    => $includeKeywords === [] || $excludeKeywords === [],

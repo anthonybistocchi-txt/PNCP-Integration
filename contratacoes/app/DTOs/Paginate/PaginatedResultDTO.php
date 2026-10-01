@@ -13,6 +13,7 @@ readonly class PaginatedResultDTO
         public int $count,
         public ?string $next_cursor,
         public bool $has_more,
-    ) {
+    )
+    {
     }
 }

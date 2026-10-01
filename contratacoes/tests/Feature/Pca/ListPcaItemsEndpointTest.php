@@ -29,7 +29,7 @@ class ListPcaItemsEndpointTest extends TestCase
         ]);
 
         PcaItem::create([
-            'plano_pca_id'    => $plan->id,
+            'plano_pca_id'   => $plan->id,
             'numero_item'    => 1,
             'descricao_item' => 'Notebook',
         ]);

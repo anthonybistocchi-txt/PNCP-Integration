@@ -23,7 +23,7 @@ class PncpOrgaoUnidade extends Model
     ];
 
     protected $casts = [
-        'ativo' => 'boolean',
+        'ativo'            => 'boolean',
         'payload_completo' => 'object',
     ];
 }

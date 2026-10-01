@@ -22,37 +22,31 @@ class DiscoverPncpUnidadesCommand extends Command
                             {--ano= : Ano para buscar unidades (padrão: ano atual)}
                             {--force : Reprocessa mesmo os que já têm unidades registradas}';
 
-    protected $description = 'Enriquecimento opcional: descobre unidades administrativas dos órgãos (não é pré-requisito do sync PCA)';
+    protected $description = 'descobre unidades administrativas dos órgãos com base na tabela de contratações, de cada contratacao de cada orgao, e persiste em unidades_orgao';
 
     public function handle(
         OrgaoRepository $orgaoRepository,
-        PncpOrgaoUnidadeRepository $unidadeRepository
+        PncpOrgaoUnidadeRepository $orgaoUnidadeRepository
     ): int {
         $ano = $this->option('ano') ? (int) $this->option('ano') : now()->year;
         $cnpjEspecifico = $this->option('cnpj');
 
-        $orgaos = $orgaoRepository->listActive($cnpjEspecifico);
+        $orgaosAtivos = $orgaoRepository->listActive($cnpjEspecifico);
 
-        if ($orgaos->isEmpty()) {
-            $this->warn('Nenhum órgão ativo encontrado para processar.');
-
+        if ($orgaosAtivos->isEmpty())
+        {
             return self::SUCCESS;
         }
 
-        $this->info("Iniciando descoberta de unidades para {$orgaos->count()} órgão(s). Ano: {$ano}");
-
-        foreach ($orgaos as $orgao) {
-            if (! $this->option('force') && $unidadeRepository->existsForOrgaoAno($orgao->cnpj, $ano)) {
-                $this->line("Pulando CNPJ {$orgao->cnpj} (já possui unidades em {$ano} e --force não foi usado).");
-
-                continue;
+        foreach ($orgaosAtivos as $orgao)
+        {
+            if (! $this->option('force') && $orgaoUnidadeRepository->existsForOrgaoAno($orgao->cnpj, $ano))
+            {
+                continue; // se não for forçado, pula se já possui unidades registradas para este ano
             }
 
-            $this->line("Despachando Job para CNPJ {$orgao->cnpj} no ano {$ano}.");
-            DiscoverPncpUnidadesJob::dispatch($orgao->cnpj, $ano);
+            DiscoverPncpUnidadesJob::dispatch($orgao->cnpj, $ano); // despacha job para descobrir unidades para este órgão e ano
         }
-
-        $this->info('Processo concluído.');
 
         return self::SUCCESS;
     }

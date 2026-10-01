@@ -13,7 +13,8 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('filtros_contratacao', function (Blueprint $table) {
+        Schema::create('filtros_contratacao', function (Blueprint $table)
+        {
             $table->id();
             $table->foreignId('user_id')->constrained()->cascadeOnDelete();
             $table->string('filter_type', 40);

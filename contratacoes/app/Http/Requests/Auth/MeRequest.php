@@ -27,7 +27,7 @@ class MeRequest extends FormRequest
     public function toDTO(): MeDTO
     {
         return new MeDTO(
-            email: $this->validated('email'),
+            email:    $this->validated('email'),
             password: $this->validated('password'),
         );
     }

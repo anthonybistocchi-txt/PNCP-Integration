@@ -46,19 +46,23 @@ class ProcessPcaItemsPageJob implements ShouldQueue
         PncpSyncCycleTracker $cycleTracker,
         SyncPcaItemsAction $upsertAction
     ): void {
-        if ($failureHandler->shouldWait($this, 'Job Page PCA', PncpCircuitBreaker::SCOPE_PCA)) {
+
+        if ($failureHandler->shouldWait($this, 'Job Page PCA', PncpCircuitBreaker::SCOPE_PCA))
+        {
             return;
         }
 
-        try {
+        try
+        {
             $itens = $client->getPcaItens($this->cnpj, $this->ano, $this->sequencial, [
-                'pagina' => $this->pagina,
+                'pagina'        => $this->pagina,
                 'tamanhoPagina' => $this->tamanhoPagina,
             ]);
 
             $circuitBreaker->recordSuccess(PncpCircuitBreaker::SCOPE_PCA);
 
-            if ($itens === []) {
+            if ($itens === [])
+            {
                 $this->markCyclePageDone($cycleTracker, 0);
 
                 return;
@@ -70,12 +74,13 @@ class ProcessPcaItemsPageJob implements ShouldQueue
                 ->where('sequencial_pca', $this->sequencial)
                 ->first();
 
-            if (! $pcaPlan) {
+            if (! $pcaPlan)
+            {
                 Log::warning('PCA_PLAN_NOT_FOUND', [
-                    'cnpj' => $this->cnpj,
-                    'ano' => $this->ano,
+                    'cnpj'       => $this->cnpj,
+                    'ano'        => $this->ano,
                     'sequencial' => $this->sequencial,
-                    'page' => $this->pagina,
+                    'page'       => $this->pagina,
                 ]);
                 // Plano ainda não commitado pelo mestre: reagenda sem avançar o ciclo.
                 $this->release(30);
@@ -84,50 +89,55 @@ class ProcessPcaItemsPageJob implements ShouldQueue
             }
 
             $itemsData = [];
-            foreach ($itens as $item) {
+            foreach ($itens as $item)
+            {
                 $itemsData[] = new PcaItemData(
-                    pcaPlanId: (int) $pcaPlan->id,
-                    numeroItem: (int) ($item->numeroItem ?? 0),
-                    categoriaItemPca: isset($item->categoriaItemPcaid) ? (int) $item->categoriaItemPcaid : null,
-                    categoriaItemPcaNome: $item->categoriaItemPcaNome ?? null,
-                    catalogoId: isset($item->catalogoId) ? (int) $item->catalogoId : null,
-                    classificacaoCatalogoId: isset($item->classificacaoCatalogoId) ? (int) $item->classificacaoCatalogoId : null,
+                    pcaPlanId:                   (int) $pcaPlan->id,
+                    numeroItem:                  (int) ($item->numeroItem ?? 0),
+                    categoriaItemPca:            isset($item->categoriaItemPcaid) ? (int) $item->categoriaItemPcaid : null,
+                    categoriaItemPcaNome:        $item->categoriaItemPcaNome ?? null,
+                    catalogoId:                  isset($item->catalogoId) ? (int) $item->catalogoId : null,
+                    classificacaoCatalogoId:     isset($item->classificacaoCatalogoId) ? (int) $item->classificacaoCatalogoId : null,
                     classificacaoSuperiorCodigo: $item->classificacaoSuperiorCodigo ?? null,
-                    classificacaoSuperiorNome: $item->classificacaoSuperiorNome ?? null,
-                    pdmCodigo: $item->pdmCodigo ?? null,
-                    pdmNome: $item->pdmDescricao ?? null,
-                    codigoItem: $item->codigoItem ?? null,
-                    descricaoItem: $item->descricao ?? null,
-                    unidadeFornecimento: $item->unidadeFornecimento ?? null,
-                    quantidade: isset($item->quantidade) ? (float) $item->quantidade : null,
-                    valorUnitario: isset($item->valorUnitario) ? (float) $item->valorUnitario : null,
-                    valorTotal: isset($item->valorTotal) ? (float) $item->valorTotal : null,
-                    valorOrcamentoExercicio: isset($item->valorOrcamentoExercicio) ? (float) $item->valorOrcamentoExercicio : null,
-                    dataDesejada: $item->dataDesejada ?? null,
-                    unidadeRequisitante: $item->unidadeRequisitante ?? null,
-                    codigoUnidadeRequisitante: $item->codigoUnidadeRequisitante ?? null,
-                    grupoContratacaoCodigo: $item->grupoContratacaoCodigo ?? null,
-                    grupoContratacaoNome: $item->grupoContratacaoNome ?? null,
-                    dataPublicacaoPncp: $item->dataPublicacaoPncp ?? null,
-                    dataInclusao: $item->dataInclusao ?? null,
-                    dataAtualizacao: $item->dataAtualizacao ?? null
+                    classificacaoSuperiorNome:   $item->classificacaoSuperiorNome ?? null,
+                    pdmCodigo:                   $item->pdmCodigo ?? null,
+                    pdmNome:                     $item->pdmDescricao ?? null,
+                    codigoItem:                  $item->codigoItem ?? null,
+                    descricaoItem:               $item->descricao ?? null,
+                    unidadeFornecimento:         $item->unidadeFornecimento ?? null,
+                    quantidade:                  isset($item->quantidade) ? (float) $item->quantidade : null,
+                    valorUnitario:               isset($item->valorUnitario) ? (float) $item->valorUnitario : null,
+                    valorTotal:                  isset($item->valorTotal) ? (float) $item->valorTotal : null,
+                    valorOrcamentoExercicio:     isset($item->valorOrcamentoExercicio) ? (float) $item->valorOrcamentoExercicio : null,
+                    dataDesejada:                $item->dataDesejada ?? null,
+                    unidadeRequisitante:         $item->unidadeRequisitante ?? null,
+                    codigoUnidadeRequisitante:   $item->codigoUnidadeRequisitante ?? null,
+                    grupoContratacaoCodigo:      $item->grupoContratacaoCodigo ?? null,
+                    grupoContratacaoNome:        $item->grupoContratacaoNome ?? null,
+                    dataPublicacaoPncp:          $item->dataPublicacaoPncp ?? null,
+                    dataInclusao:                $item->dataInclusao ?? null,
+                    dataAtualizacao:             $item->dataAtualizacao ?? null
                 );
             }
 
             $upsertAction->handle($itemsData);
 
             $this->markCyclePageDone($cycleTracker, count($itemsData));
-        } catch (\Throwable $error) {
+
+        }
+        catch (\Throwable $error)
+        {
             // Reagendado (API indisponível ou em pausa): a página ainda vai
             // rodar, então o contador do ciclo não pode avançar.
             if ($failureHandler->handle($error, $this, PncpCircuitBreaker::SCOPE_PCA, [
-                'action' => 'ProcessPcaItemsPageJob',
-                'attempt' => $this->attempts(),
-                'cnpj' => $this->cnpj,
-                'ano' => $this->ano,
+                'action'     => 'ProcessPcaItemsPageJob',
+                'attempt'    => $this->attempts(),
+                'cnpj'       => $this->cnpj,
+                'ano'        => $this->ano,
                 'sequencial' => $this->sequencial,
-                'page' => $this->pagina,
-            ])) {
+                'page'       => $this->pagina,
+            ]))
+            {
                 return;
             }
 
@@ -146,15 +156,16 @@ class ProcessPcaItemsPageJob implements ShouldQueue
     {
         $summary = $cycleTracker->markPageDone($this->syncId, $itemsProcessed);
 
-        if ($summary === null) {
+        if ($summary === null)
+        {
             return null;
         }
 
         PncpPcaCiclo::where('sync_id', $this->syncId)
             ->where('status', PncpPcaCiclo::STATUS_STARTED)
             ->update([
-                'status' => PncpPcaCiclo::STATUS_FINISHED,
-                'finished_at' => now(),
+                'status'            => PncpPcaCiclo::STATUS_FINISHED,
+                'finished_at'       => now(),
                 'paginas_completas' => $summary['units_completed'],
                 'itens_processados' => $summary['items_processed'],
             ]);
@@ -165,22 +176,23 @@ class ProcessPcaItemsPageJob implements ShouldQueue
     public function failed(\Throwable $exception): void
     {
         Log::error('PNCP_PCA_PAGE_ABANDONED', [
-            'sync_id' => $this->syncId,
-            'cnpj' => $this->cnpj,
-            'ano' => $this->ano,
+            'sync_id'    => $this->syncId,
+            'cnpj'       => $this->cnpj,
+            'ano'        => $this->ano,
             'sequencial' => $this->sequencial,
-            'page' => $this->pagina,
-            'exception' => get_class($exception),
-            'message' => $exception->getMessage(),
+            'page'       => $this->pagina,
+            'exception'  => get_class($exception),
+            'message'    => $exception->getMessage(),
         ]);
 
         $summary = $this->markCyclePageDone(app(PncpSyncCycleTracker::class), 0);
 
-        if ($summary === null) {
+        if ($summary === null)
+        {
             PncpPcaCiclo::where('sync_id', $this->syncId)
                 ->where('status', PncpPcaCiclo::STATUS_STARTED)
                 ->update([
-                    'status' => PncpPcaCiclo::STATUS_ABANDONED,
+                    'status'      => PncpPcaCiclo::STATUS_ABANDONED,
                     'finished_at' => now(),
                 ]);
         }

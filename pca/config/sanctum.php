@@ -78,10 +78,10 @@ return [
     |
     */
 
-    'middleware' => [
+    'middleware'               => [
         'authenticate_session' => AuthenticateSession::class,
-        'encrypt_cookies' => EncryptCookies::class,
-        'validate_csrf_token' => ValidateCsrfToken::class,
+        'encrypt_cookies'      => EncryptCookies::class,
+        'validate_csrf_token'  => ValidateCsrfToken::class,
     ],
 
 ];

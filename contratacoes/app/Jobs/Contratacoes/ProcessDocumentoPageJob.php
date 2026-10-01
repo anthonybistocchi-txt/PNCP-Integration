@@ -79,6 +79,7 @@ class ProcessDocumentoPageJob implements ShouldQueue
         PncpFailureHandler $failureHandler,
         PncpSyncCycleTracker $cycleTracker
     ): void {
+
         Log::withContext([
             'sync_id'    => $this->syncId,
             'job_id'     => $this->job ? $this->job->getJobId() : 'documents',
@@ -86,7 +87,8 @@ class ProcessDocumentoPageJob implements ShouldQueue
             'lote_size'  => count($this->items),
         ]);
 
-        if ($failureHandler->shouldWait($this, 'Job de Documentos', PncpCircuitBreaker::SCOPE_DOCUMENTOS)) {
+        if ($failureHandler->shouldWait($this, 'Job de Documentos', PncpCircuitBreaker::SCOPE_DOCUMENTOS))
+        {
             return;
         }
 
@@ -94,7 +96,8 @@ class ProcessDocumentoPageJob implements ShouldQueue
         $pendentes = $this->itemsAindaPendentes();
         $jaFeitos  = count($this->items) - count($pendentes);
 
-        if ($pendentes === []) {
+        if ($pendentes === [])
+        {
             $this->markCyclePageDone($cycleTracker, $jaFeitos);
 
             return;
@@ -102,8 +105,10 @@ class ProcessDocumentoPageJob implements ShouldQueue
 
         $upsertData = [];
 
-        try {
-            foreach ($pendentes as $item) {
+        try
+        {
+            foreach ($pendentes as $item)
+            {
                 $cnpj       = $item['orgao_cnpj'];
                 $ano        = $item['ano_compra'];
                 $sequencial = $item['sequencial_compra'];
@@ -115,8 +120,8 @@ class ProcessDocumentoPageJob implements ShouldQueue
                 $circuitBreaker->recordSuccess(PncpCircuitBreaker::SCOPE_DOCUMENTOS);
 
                 $upsertData[] = [
-                    'numero_controle_pncp' => $item['numero_controle_pncp'],
-                    'documentos'           => json_encode($documentos),
+                    'numero_controle_pncp'        => $item['numero_controle_pncp'],
+                    'documentos'                  => json_encode($documentos),
                     'documentos_sincronizados_em' => now()->toDateTimeString(),
                 ];
             }
@@ -125,7 +130,10 @@ class ProcessDocumentoPageJob implements ShouldQueue
             $syncAction->handle($upsertData);
 
             $this->markCyclePageDone($cycleTracker, count($upsertData) + $jaFeitos);
-        } catch (\Throwable $error) {
+
+        }
+        catch (\Throwable $error)
+        {
             // Grava o que já veio antes de devolver o lote para a fila.
             //
             // O lote era atômico: uma falha em qualquer item descartava o
@@ -136,20 +144,23 @@ class ProcessDocumentoPageJob implements ShouldQueue
             // rebuscava tudo e morria de novo, queimando vaga do limitador
             // global em registros que já tinham sido obtidos e jogados fora.
             // É a origem dos `attempt: 31..51` de 15/09.
-            if ($upsertData !== []) {
+
+            if ($upsertData !== [])
+            {
                 $syncAction->handle($upsertData);
             }
 
             // Reagendado (API indisponível ou em pausa): o lote ainda vai rodar,
             // então o contador do ciclo de documentos não pode avançar.
             if ($failureHandler->handle($error, $this, PncpCircuitBreaker::SCOPE_DOCUMENTOS, [
-                'action'     => 'ProcessDocumentoPageJob',
-                'lote_size'  => count($this->items),
-                'pendentes'  => count($pendentes),
-                'persistidos'=> count($upsertData),
-                'attempt'    => $this->attempts(),
-                'modalidade' => $this->modalidade,
-            ])) {
+                'action'      => 'ProcessDocumentoPageJob',
+                'lote_size'   => count($this->items),
+                'pendentes'   => count($pendentes),
+                'persistidos' => count($upsertData),
+                'attempt'     => $this->attempts(),
+                'modalidade'  => $this->modalidade,
+            ]))
+            {
                 return;
             }
 
@@ -177,7 +188,8 @@ class ProcessDocumentoPageJob implements ShouldQueue
             ->pluck('numero_controle_pncp')
             ->all();
 
-        if ($jaBuscados === []) {
+        if ($jaBuscados === [])
+        {
             return array_values($this->items);
         }
 
@@ -197,7 +209,8 @@ class ProcessDocumentoPageJob implements ShouldQueue
     {
         $summary = $cycleTracker->markPageDone($this->syncId, $itemsProcessed);
 
-        if ($summary === null) {
+        if ($summary === null)
+        {
             return;
         }
 

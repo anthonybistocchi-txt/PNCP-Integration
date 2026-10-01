@@ -17,14 +17,15 @@ class PncpRateLimitedException extends PncpApiException
         public ?int $retryAfter = null,
         ?Response $response = null,
         ?\Throwable $previous = null
-    ) {
+    )
+    {
         parent::__construct(
             message: $retryAfter !== null
                 ? "PNCP respondeu 429 e pediu {$retryAfter}s de espera."
                 : 'PNCP respondeu 429 (Too Many Requests) sem header Retry-After.',
             statusCode: 429,
-            response: $response,
-            previous: $previous
+            response:   $response,
+            previous:   $previous
         );
     }
 }

@@ -11,7 +11,8 @@ class ApiExceptionRenderer
 {
     public function render(Throwable $e, Request $request): ?JsonResponse
     {
-        if (!($request->is('api/*') || $request->expectsJson())) {
+        if (!($request->is('api/*') || $request->expectsJson()))
+        {
             return null;
         }
 
@@ -25,7 +26,8 @@ class ApiExceptionRenderer
             'request_id' => $requestId,
         ];
 
-        if (app()->hasDebugModeEnabled() && !app()->environment('production')) {
+        if (app()->hasDebugModeEnabled() && !app()->environment('production'))
+        {
             $payload['debug'] = [
                 'exception' => get_class($e),
                 'message'   => $e->getMessage(),

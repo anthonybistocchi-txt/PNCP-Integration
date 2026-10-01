@@ -8,7 +8,8 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('ciclos_contratacao', function (Blueprint $table) {
+        Schema::create('ciclos_contratacao', function (Blueprint $table)
+        {
             $table->id();
             $table->uuid('sync_id')->nullable()->unique();
             $table->unsignedSmallInteger('modalidade');

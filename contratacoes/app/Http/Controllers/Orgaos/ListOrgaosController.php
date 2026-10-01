@@ -25,22 +25,22 @@ class ListOrgaosController extends Controller
         $orgaos = OrgaoResource::collection($result->data);
 
         Log::info(json_encode([
-            'event' => 'API_READ_SUCCESS',
-            'user_id' => Auth::user()->id,
-            'results' => [
+            'event'          => 'API_READ_SUCCESS',
+            'user_id'        => Auth::user()->id,
+            'results'        => [
                 'count_page' => $result->count_page,
-                'has_more' => $result->has_more,
+                'has_more'   => $result->has_more,
             ],
             'duration_ms' => $startedAt->diffInMilliseconds(now()),
         ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
 
         return response()->json([
-            'data' => $orgaos,
-            'page' => $result->page,
-            'count_page' => $result->count_page,
-            'count' => $result->count,
+            'data'        => $orgaos,
+            'page'        => $result->page,
+            'count_page'  => $result->count_page,
+            'count'       => $result->count,
             'next_cursor' => $result->next_cursor,
-            'has_more' => $result->has_more,
+            'has_more'    => $result->has_more,
         ], 200);
     }
 }

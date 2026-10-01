@@ -28,30 +28,36 @@ class PncpClient
         $pagina = 1;
         $todas = [];
 
-        while (true) {
+        while (true)
+        {
             $response = $this->request($url, [
-                'pagina' => $pagina,
+                'pagina'        => $pagina,
                 'tamanhoPagina' => $tamanhoPagina,
             ], (int) config('pncp.http.timeout'));
 
-            if ($response->notFound()) {
+            if ($response->notFound())
+            {
                 return $todas;
             }
 
-            if (! $response->successful()) {
+            if (! $response->successful())
+            {
                 $this->throwForStatus($response);
             }
 
             $chunk = json_decode($response->body());
-            if (! is_array($chunk) || $chunk === []) {
+            if (! is_array($chunk) || $chunk === [])
+            {
                 break;
             }
 
-            foreach ($chunk as $item) {
+            foreach ($chunk as $item)
+            {
                 $todas[] = $item;
             }
 
-            if (count($chunk) < $tamanhoPagina) {
+            if (count($chunk) < $tamanhoPagina)
+            {
                 break;
             }
 
@@ -73,13 +79,15 @@ class PncpClient
 
         $response = $this->request($url, [], (int) config('pncp.http.timeout'));
 
-        if ($response->successful()) {
+        if ($response->successful())
+        {
             $pca = json_decode($response->body());
 
             return is_object($pca) ? $pca : null;
         }
 
-        if ($response->notFound()) {
+        if ($response->notFound())
+        {
             return null;
         }
 
@@ -100,13 +108,15 @@ class PncpClient
 
         $response = $this->request($url, $params, (int) config('pncp.http.timeout'));
 
-        if ($response->successful()) {
+        if ($response->successful())
+        {
             $itens = json_decode($response->body());
 
             return is_array($itens) ? $itens : [];
         }
 
-        if ($response->notFound()) {
+        if ($response->notFound())
+        {
             return [];
         }
 
@@ -125,11 +135,13 @@ class PncpClient
 
         $response = $this->request($url, [], (int) config('pncp.http.timeout'));
 
-        if ($response->successful()) {
+        if ($response->successful())
+        {
             return (int) json_decode($response->body());
         }
 
-        if ($response->notFound()) {
+        if ($response->notFound())
+        {
             return 0;
         }
 
@@ -147,12 +159,14 @@ class PncpClient
 
         $response = $this->request($url, [], (int) config('pncp.http.timeout'));
 
-        if ($response->successful()) {
+        if ($response->successful())
+        {
             $valores = json_decode($response->body());
             return is_array($valores) ? $valores : [];
         }
 
-        if ($response->notFound()) {
+        if ($response->notFound())
+        {
             return [];
         }
 
@@ -176,7 +190,8 @@ class PncpClient
     {
         $minInterval = (int) config('pncp.throttle.min_interval_seconds');
 
-        if ($minInterval <= 0) {
+        if ($minInterval <= 0)
+        {
             return $this->send($url, $query, $timeout);
         }
 
@@ -187,7 +202,7 @@ class PncpClient
             ->then(
                 fn () => $this->send($url, $query, $timeout),
                 fn () => throw new PncpUnavailableException(
-                    message: 'Sem vaga no limitador de taxa do PNCP dentro do tempo de espera.',
+                    message:    'Sem vaga no limitador de taxa do PNCP dentro do tempo de espera.',
                     statusCode: 429
                 )
             );
@@ -195,7 +210,8 @@ class PncpClient
 
     private function send(string $url, array $query, int $timeout): Response
     {
-        try {
+        try
+        {
             return Http::connectTimeout((int) config('pncp.http.connect_timeout'))
                 ->timeout($timeout)
                 ->retry(
@@ -205,13 +221,15 @@ class PncpClient
                 )
                 ->withHeaders(['Accept' => 'application/json'])
                 ->get($url, $query);
-        } catch (ConnectionException $error) {
+        }
+        catch (ConnectionException $error)
+        {
             // cURL 28 e afins: a sobrecarga do PNCP é tão grande que a resposta
             // sequer chega. Mesmo sintoma de um 5xx, mesmo tratamento.
             throw new PncpUnavailableException(
-                message: 'Timeout ou falha de conexão com o PNCP: ' . $error->getMessage(),
+                message:    'Timeout ou falha de conexão com o PNCP: ' . $error->getMessage(),
                 statusCode: 408,
-                previous: $error
+                previous:   $error
             );
         }
     }
@@ -223,18 +241,20 @@ class PncpClient
      */
     private function throwForStatus(Response $response): never
     {
-        if ($response->status() === 429) {
+        if ($response->status() === 429)
+        {
             throw new PncpRateLimitedException(
                 retryAfter: $this->parseRetryAfter($response->header('Retry-After')),
-                response: $response
+                response:   $response
             );
         }
 
-        if ($response->serverError()) {
+        if ($response->serverError())
+        {
             throw new PncpUnavailableException(
-                message: 'PNCP respondeu ' . $response->status() . ': ' . str($response->body())->limit(200),
+                message:    'PNCP respondeu ' . $response->status() . ': ' . str($response->body())->limit(200),
                 statusCode: $response->status(),
-                response: $response
+                response:   $response
             );
         }
 
@@ -244,9 +264,9 @@ class PncpClient
         // Inalcançável: throw() só não lança em resposta bem-sucedida, e essas
         // não chegam aqui. Falhar alto é melhor que devolver null em silêncio.
         throw new PncpApiException(
-            message: 'Resposta inesperada do PNCP com status ' . $response->status(),
+            message:    'Resposta inesperada do PNCP com status ' . $response->status(),
             statusCode: $response->status(),
-            response: $response
+            response:   $response
         );
     }
 
@@ -255,17 +275,22 @@ class PncpClient
      */
     private function parseRetryAfter(?string $header): ?int
     {
-        if (blank($header)) {
+        if (blank($header))
+        {
             return null;
         }
 
-        if (is_numeric($header)) {
+        if (is_numeric($header))
+        {
             return max(0, (int) $header);
         }
 
-        try {
+        try
+        {
             return max(0, now()->diffInSeconds(Carbon::parse($header), false));
-        } catch (\Throwable) {
+        }
+        catch (\Throwable)
+        {
             return null;
         }
     }

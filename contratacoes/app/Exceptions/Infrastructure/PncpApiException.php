@@ -12,7 +12,8 @@ class PncpApiException extends Exception
         public int $statusCode = 0,
         public ?Response $response = null,
         ?\Throwable $previous = null
-    ) {
+    )
+    {
         parent::__construct($message, $statusCode, $previous);
     }
 }

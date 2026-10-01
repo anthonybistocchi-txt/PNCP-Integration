@@ -26,12 +26,12 @@ class ListContratacoesController extends Controller
         $contratations = ListContratacoesResource::collection($result->data);
 
         Log::info(json_encode([
-            'event'       => 'API_READ_SUCCESS',
-            'user_id'     => Auth::user()->id,
-            'filters'     => (array) $dto,
-            'results'     => [
-                'count_page'  => $result->count_page,
-                'has_more'    => $result->has_more,
+            'event'          => 'API_READ_SUCCESS',
+            'user_id'        => Auth::user()->id,
+            'filters'        => (array) $dto,
+            'results'        => [
+                'count_page' => $result->count_page,
+                'has_more'   => $result->has_more,
             ],
             'duration_ms' => $startedAt->diffInMilliseconds(now()),
         ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));

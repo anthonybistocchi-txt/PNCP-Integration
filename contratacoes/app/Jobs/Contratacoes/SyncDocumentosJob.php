@@ -108,38 +108,40 @@ class SyncDocumentosJob implements ShouldQueue, ShouldBeUnique
             ->get()
             ->toArray();
 
-        if (empty($records)) {
-            Log::info('PNCP_DOCUMENTOS_EMPTY', [
-                'source'           => 'fase2',
-                'modalidade'       => $this->dto->codigoModalidadeContratacao,
-                'dataInicial'      => $this->dto->dataInicial,
-                'dataFinal'        => $this->dto->dataFinal,
-                'status'           => 'empty',
-                'total_records'    => 0,
-                'duration_seconds' => $startedAt->diffInSeconds(now()),
-            ]);
+        if (empty($records))
+        {
+            // Log::info('PNCP_DOCUMENTOS_EMPTY', [
+            //     'source'           => 'fase2',
+            //     'modalidade'       => $this->dto->codigoModalidadeContratacao,
+            //     'dataInicial'      => $this->dto->dataInicial,
+            //     'dataFinal'        => $this->dto->dataFinal,
+            //     'status'           => 'empty',
+            //     'total_records'    => 0,
+            //     'duration_seconds' => $startedAt->diffInSeconds(now()),
+            // ]);
 
             return;
         }
 
-        $lotes       = array_chunk($records, (int) config('pncp.documents_lote_size', 10));
-        $totalLotes  = count($lotes);
+        $lotes        = array_chunk($records, (int) config('pncp.documents_lote_size', 10));
+        $totalLotes   = count($lotes);
         $totalRecords = count($records);
-        $syncId      = (string) Str::uuid();
+        $syncId       = (string) Str::uuid();
 
         // Trava por modalidade: se a varredura de pendentes (ou outro ciclo
         // desta própria Fase 2, caso de corrida) já estiver ativa para esta
         // modalidade, desiste do despacho em vez de duplicar chamadas HTTP
         // para os mesmos registros. Ver PncpSyncCycleTracker::tryStartModalidade.
-        if (! $cycleTracker->tryStartModalidade($this->dto->codigoModalidadeContratacao, $syncId)) {
+        if (! $cycleTracker->tryStartModalidade($this->dto->codigoModalidadeContratacao, $syncId))
+        {
             Log::warning('PNCP_DOCUMENTOS_SKIPPED_COLLISION', [
-                'source'        => 'fase2',
-                'modalidade'    => $this->dto->codigoModalidadeContratacao,
-                'dataInicial'   => $this->dto->dataInicial,
-                'dataFinal'     => $this->dto->dataFinal,
-                'total_records' => $totalRecords,
-                'active_sync_id'=> $cycleTracker->activeSyncId($this->dto->codigoModalidadeContratacao),
-                'reason'        => 'Já existe um ciclo de documentos ativo para esta modalidade (Fase 2 ou varredura de pendentes). Registros continuam com documentos_sincronizados_em nulo; serão retomados no próximo ciclo que conseguir a trava.',
+                'source'         => 'fase2',
+                'modalidade'     => $this->dto->codigoModalidadeContratacao,
+                'dataInicial'    => $this->dto->dataInicial,
+                'dataFinal'      => $this->dto->dataFinal,
+                'total_records'  => $totalRecords,
+                'active_sync_id' => $cycleTracker->activeSyncId($this->dto->codigoModalidadeContratacao),
+                'reason'         => 'Já existe um ciclo de documentos ativo para esta modalidade (Fase 2 ou varredura de pendentes). Registros continuam com documentos_sincronizados_em nulo; serão retomados no próximo ciclo que conseguir a trava.',
             ]);
 
             return;
@@ -158,7 +160,8 @@ class SyncDocumentosJob implements ShouldQueue, ShouldBeUnique
             'started_at'    => $startedAt->toIso8601String(),
         ]);
 
-        foreach ($lotes as $lote) {
+        foreach ($lotes as $lote)
+        {
             ProcessDocumentoPageJob::dispatch(
                 $lote,
                 $syncId,

@@ -29,14 +29,16 @@ class SyncContratacoesCommand extends Command
     {
         $modalidades = $this->resolverModalidades();
 
-        if ($modalidades === []) {
+        if ($modalidades === [])
+        {
             $this->error('Nenhuma modalidade válida. Use IDs de 1 a 10, separados por vírgula.');
             return self::FAILURE;
         }
 
         $intervalo = $this->resolverIntervalo();
 
-        if ($intervalo === null) {
+        if ($intervalo === null)
+        {
             return self::FAILURE;
         }
 
@@ -44,15 +46,16 @@ class SyncContratacoesCommand extends Command
 
         $this->info("Sincronizando PNCP de {$dataInicial} até {$dataFinal}. Modalidades: " . implode(', ', $modalidades));
 
-        foreach ($modalidades as $modalidade) {
+        foreach ($modalidades as $modalidade)
+        {
             $dto = new ListContratacoesDTO(
-                dataInicial: $dataInicial,
-                dataFinal: $dataFinal,
+                dataInicial:                 $dataInicial,
+                dataFinal:                   $dataFinal,
                 codigoModalidadeContratacao: $modalidade,
-                uf: null,
-                codigoMunicipioIbge: null,
-                cursor: null,
-                limit: 50,
+                uf:                          null,
+                codigoMunicipioIbge:         null,
+                cursor:                      null,
+                limit:                       50,
             );
 
             SyncContratacoesJob::dispatch($dto);
@@ -71,7 +74,8 @@ class SyncContratacoesCommand extends Command
         $dataInicial = trim((string) $this->option('data-inicial'));
         $dataFinal   = trim((string) $this->option('data-final'));
 
-        if ($dataInicial === '' && $dataFinal === '') {
+        if ($dataInicial === '' && $dataFinal === '')
+        {
             $days = max(1, (int) $this->option('days'));
 
             return [
@@ -80,19 +84,22 @@ class SyncContratacoesCommand extends Command
             ];
         }
 
-        if ($dataInicial === '' || $dataFinal === '') {
+        if ($dataInicial === '' || $dataFinal === '')
+        {
             $this->error('Use --data-inicial e --data-final juntos (formato Ymd), ou só --days.');
 
             return null;
         }
 
-        if (! preg_match('/^\d{8}$/', $dataInicial) || ! preg_match('/^\d{8}$/', $dataFinal)) {
+        if (! preg_match('/^\d{8}$/', $dataInicial) || ! preg_match('/^\d{8}$/', $dataFinal))
+        {
             $this->error('Datas devem estar no formato Ymd (ex.: 20260914).');
 
             return null;
         }
 
-        if ($dataInicial > $dataFinal) {
+        if ($dataInicial > $dataFinal)
+        {
             $this->error('data-inicial não pode ser posterior a data-final.');
 
             return null;
@@ -108,7 +115,8 @@ class SyncContratacoesCommand extends Command
     {
         $raw = trim((string) $this->option('modalidades'));
 
-        if ($raw === '') {
+        if ($raw === '')
+        {
             return $this->todasModalidades;
         }
 

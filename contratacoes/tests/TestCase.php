@@ -35,7 +35,8 @@ abstract class TestCase extends BaseTestCase
     {
         $besideApp = dirname(base_path()).DIRECTORY_SEPARATOR.$sibling.DIRECTORY_SEPARATOR.'database'.DIRECTORY_SEPARATOR.'migrations';
 
-        if (is_dir($besideApp)) {
+        if (is_dir($besideApp))
+        {
             return $besideApp;
         }
 

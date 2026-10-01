@@ -7,7 +7,8 @@ return new class extends Migration
 {
     public function up(): void
     {
-        if (DB::connection()->getDriverName() !== 'pgsql') {
+        if (DB::connection()->getDriverName() !== 'pgsql')
+        {
             return;
         }
 
@@ -16,7 +17,8 @@ return new class extends Migration
 
     public function down(): void
     {
-        if (DB::connection()->getDriverName() !== 'pgsql') {
+        if (DB::connection()->getDriverName() !== 'pgsql')
+        {
             return;
         }
 

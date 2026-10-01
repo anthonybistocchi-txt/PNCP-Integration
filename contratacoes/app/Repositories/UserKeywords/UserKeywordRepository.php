@@ -37,11 +37,11 @@ class UserKeywordRepository
         $now = now();
 
         $keywordRows = array_map(static fn(string $keyword): array => [
-            'user_id'    => $userId,
-            'keyword'    => $keyword,
-            'type'       => $type,
-            'created_at' => $now,
-            'updated_at' => $now,
+            'user_id'                                              => $userId,
+            'keyword'                                              => $keyword,
+            'type'                                                 => $type,
+            'created_at'                                           => $now,
+            'updated_at'                                           => $now,
         ], $keywords);
 
         UserKeyword::upsert(

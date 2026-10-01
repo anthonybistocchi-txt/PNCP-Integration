@@ -32,7 +32,8 @@ class UserContratationFilterService
 
         $filtersGroupedByType = [];
 
-        foreach ($userFilters as $userFilter) {
+        foreach ($userFilters as $userFilter)
+        {
             $filtersGroupedByType[$userFilter->filter_type][] = $userFilter->value;
         }
 
@@ -41,7 +42,8 @@ class UserContratationFilterService
 
     public function saveOrUpdate(SaveUserContratationFilterDTO $filterToSave): Collection
     {
-        if (!in_array($filterToSave->filterType, UserContratationFilter::TYPES, true)) {
+        if (!in_array($filterToSave->filterType, UserContratationFilter::TYPES, true))
+        {
             throw new BusinessRuleException(
                 "Tipo de filtro inválido: {$filterToSave->filterType}."
             );
@@ -54,7 +56,8 @@ class UserContratationFilterService
     {
         $deleted = $this->repository->delete($id, $userId);
 
-        if (!$deleted) {
+        if (!$deleted)
+        {
             throw new ResourceNotFoundException('Filtro não encontrado ou não pertence ao usuário.');
         }
     }

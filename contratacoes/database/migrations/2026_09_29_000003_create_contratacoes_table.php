@@ -9,7 +9,8 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('contratacoes', function (Blueprint $table) {
+        Schema::create('contratacoes', function (Blueprint $table)
+        {
             $table->string('numero_controle_pncp')->primary();
 
             $table->string('orgao_cnpj')->index();
@@ -35,7 +36,8 @@ return new class extends Migration
             $table->timestamps();
         });
 
-        if (DB::connection()->getDriverName() !== 'pgsql') {
+        if (DB::connection()->getDriverName() !== 'pgsql')
+        {
             return;
         }
 

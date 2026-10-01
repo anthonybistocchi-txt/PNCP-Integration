@@ -35,7 +35,8 @@ class UserKeywordService
             UserKeyword::TYPE_EXCLUDE => [],
         ];
 
-        foreach ($userKeywords as $userKeyword) {
+        foreach ($userKeywords as $userKeyword)
+        {
             $keywordsGroupedByType[$userKeyword->type][] = $userKeyword->keyword;
         }
 
@@ -44,7 +45,7 @@ class UserKeywordService
 
     public function saveOrUpdate(SaveUserKeywordDTO $keywordToSave): UserKeyword|Collection
     {
-        if ($keywordToSave->id) 
+        if ($keywordToSave->id)
         {
             $existingKeyword = $this->repository->findByKeyword(
                 $keywordToSave->userId,
@@ -52,7 +53,8 @@ class UserKeywordService
                 $keywordToSave->type
             );
 
-            if ($existingKeyword && $existingKeyword->id !== $keywordToSave->id) {
+            if ($existingKeyword && $existingKeyword->id !== $keywordToSave->id)
+            {
                 throw new ResourceConflictException("Esta palavra-chave já está cadastrada para o usuário.");
             }
 

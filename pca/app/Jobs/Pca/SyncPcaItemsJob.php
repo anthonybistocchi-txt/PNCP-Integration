@@ -46,26 +46,29 @@ class SyncPcaItemsJob implements ShouldQueue
 
         $startedAt = now();
 
-        if ($failureHandler->shouldWait($this, 'Job Sub-Mestre PCA', PncpCircuitBreaker::SCOPE_PCA)) {
+        if ($failureHandler->shouldWait($this, 'Job Sub-Mestre PCA', PncpCircuitBreaker::SCOPE_PCA))
+        {
             return;
         }
 
         $tamanhoPagina = 50;
 
-        try {
+        try
+        {
             $totalRecords = $client->getPcaItensQuantidade($this->cnpj, $this->ano, $this->sequencial);
 
             $circuitBreaker->recordSuccess(PncpCircuitBreaker::SCOPE_PCA);
 
-            if ($totalRecords <= 0) {
+            if ($totalRecords <= 0)
+            {
                 PncpPcaCiclo::create([
-                    'sync_id' => (string) Str::uuid(),
-                    'cnpj_orgao' => $this->cnpj,
-                    'ano_pca' => $this->ano,
+                    'sync_id'        => (string) Str::uuid(),
+                    'cnpj_orgao'     => $this->cnpj,
+                    'ano_pca'        => $this->ano,
                     'sequencial_pca' => $this->sequencial,
-                    'status' => PncpPcaCiclo::STATUS_EMPTY,
-                    'started_at' => $startedAt,
-                    'finished_at' => now(),
+                    'status'         => PncpPcaCiclo::STATUS_EMPTY,
+                    'started_at'     => $startedAt,
+                    'finished_at'    => now(),
                 ]);
 
                 return;
@@ -76,17 +79,18 @@ class SyncPcaItemsJob implements ShouldQueue
 
             $cycleTracker->start($this->syncId, $totalPaginas, $totalRecords);
             PncpPcaCiclo::create([
-                'sync_id' => $this->syncId,
-                'cnpj_orgao' => $this->cnpj,
-                'ano_pca' => $this->ano,
-                'sequencial_pca' => $this->sequencial,
+                'sync_id'         => $this->syncId,
+                'cnpj_orgao'      => $this->cnpj,
+                'ano_pca'         => $this->ano,
+                'sequencial_pca'  => $this->sequencial,
                 'total_anunciado' => $totalRecords,
-                'total_paginas' => $totalPaginas,
-                'status' => PncpPcaCiclo::STATUS_STARTED,
-                'started_at' => $startedAt,
+                'total_paginas'   => $totalPaginas,
+                'status'          => PncpPcaCiclo::STATUS_STARTED,
+                'started_at'      => $startedAt,
             ]);
 
-            for ($pagina = 1; $pagina <= $totalPaginas; $pagina++) {
+            for ($pagina = 1; $pagina <= $totalPaginas; $pagina++)
+            {
                 ProcessPcaItemsPageJob::dispatch(
                     $this->cnpj,
                     $this->ano,
@@ -96,9 +100,12 @@ class SyncPcaItemsJob implements ShouldQueue
                     $this->syncId
                 );
             }
-        } catch (\Throwable $error) {
+
+        }
+        catch (\Throwable $error)
+        {
             $failureHandler->handle($error, $this, PncpCircuitBreaker::SCOPE_PCA, [
-                'action' => 'SyncPcaItemsJob',
+                'action'  => 'SyncPcaItemsJob',
                 'attempt' => $this->attempts(),
             ]);
         }
@@ -109,14 +116,15 @@ class SyncPcaItemsJob implements ShouldQueue
         // Falhou antes de medir a quantidade (ex.: API fora do ar durante todo
         // o retryUntil): o ciclo de plano nem chegou a ser criado. Registra um
         // registro abandonado para o gap ficar visível em ciclos_pca.
-        if ($this->syncId === '') {
+        if ($this->syncId === '')
+        {
             PncpPcaCiclo::create([
-                'sync_id' => (string) Str::uuid(),
-                'cnpj_orgao' => $this->cnpj,
-                'ano_pca' => $this->ano,
+                'sync_id'        => (string) Str::uuid(),
+                'cnpj_orgao'     => $this->cnpj,
+                'ano_pca'        => $this->ano,
                 'sequencial_pca' => $this->sequencial,
-                'status' => PncpPcaCiclo::STATUS_ABANDONED,
-                'finished_at' => now(),
+                'status'         => PncpPcaCiclo::STATUS_ABANDONED,
+                'finished_at'    => now(),
             ]);
 
             return;
@@ -125,7 +133,7 @@ class SyncPcaItemsJob implements ShouldQueue
         PncpPcaCiclo::where('sync_id', $this->syncId)
             ->where('status', PncpPcaCiclo::STATUS_STARTED)
             ->update([
-                'status' => PncpPcaCiclo::STATUS_ABANDONED,
+                'status'      => PncpPcaCiclo::STATUS_ABANDONED,
                 'finished_at' => now(),
             ]);
     }

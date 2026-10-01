@@ -38,14 +38,14 @@ class PcaItem extends Model
     ];
 
     protected $casts = [
-        'quantidade' => 'decimal:4',
-        'valor_unitario' => 'decimal:2',
-        'valor_total' => 'decimal:2',
+        'quantidade'                => 'decimal:4',
+        'valor_unitario'            => 'decimal:2',
+        'valor_total'               => 'decimal:2',
         'valor_orcamento_exercicio' => 'decimal:2',
-        'data_desejada' => 'date',
-        'data_publicacao_pncp' => 'date',
-        'data_inclusao' => 'datetime',
-        'data_atualizacao' => 'datetime',
+        'data_desejada'             => 'date',
+        'data_publicacao_pncp'      => 'date',
+        'data_inclusao'             => 'datetime',
+        'data_atualizacao'          => 'datetime',
     ];
 
     public function plan(): BelongsTo

@@ -40,14 +40,14 @@ class ListRelevantContratacoesController extends Controller
         $contratations = ListContratacoesResource::collection($result->data);
 
         Log::info(json_encode([
-            'event'       => 'API_RELEVANT_SEARCH_SUCCESS',
-            'user_id'     => $user->id,
-            'mode'        => $mode->value,
-            'filters'     => (array) $dto,
-            'results'     => [
-                'count'       => $result->count,
-                'count_page'  => $result->count_page,
-                'has_more'    => $result->has_more,
+            'event'          => 'API_RELEVANT_SEARCH_SUCCESS',
+            'user_id'        => $user->id,
+            'mode'           => $mode->value,
+            'filters'        => (array) $dto,
+            'results'        => [
+                'count'      => $result->count,
+                'count_page' => $result->count_page,
+                'has_more'   => $result->has_more,
             ],
             'duration_ms' => $startedAt->diffInMilliseconds(now()),
         ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));

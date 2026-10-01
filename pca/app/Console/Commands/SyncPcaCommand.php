@@ -13,26 +13,26 @@ class SyncPcaCommand extends Command
                             {--ano= : Ano do PCA (padrão: ano atual)}
                             {--cnpj= : CNPJ específico; sem valor, usa todos os ativos}';
 
-    protected $description = 'Dispara os jobs para sincronizar o PCA dos órgãos ativos';
+    protected $description = 'Dispara os jobs para pegar cada PCA (Plano de Contratação Anual) de cada orgao salvo na tabela de contratações, e persistir em planos_pca com base no ano e cnpj do orgao';
 
-    public function handle(OrgaoRepository $repository): int
+    public function handle(OrgaoRepository $orgaoRepository): int
     {
         $ano = $this->option('ano') ? (int) $this->option('ano') : now()->year;
         $cnpjEspecifico = $this->option('cnpj');
 
-        $orgaos = $repository->listActive($cnpjEspecifico);
+        $orgaosAtivos = $orgaoRepository->listActive($cnpjEspecifico);
 
-        if ($orgaos->isEmpty()) {
-            $this->warn('Nenhum órgão ativo encontrado para sincronizar o PCA.');
-
+        if ($orgaosAtivos->isEmpty())
+        {
             return self::SUCCESS;
         }
 
-        $this->info("Iniciando despacho de jobs de PCA para {$orgaos->count()} órgão(s). Ano: {$ano}");
+        $this->info("Iniciando despacho de jobs de PCA para {$orgaosAtivos->count()} órgão(s). Ano: {$ano}");
 
-        foreach ($orgaos as $orgao) {
+        foreach ($orgaosAtivos as $orgao)
+        {
             $dto = new PcaSyncParamsDTO(
-                ano: $ano,
+                ano:  $ano,
                 cnpj: $orgao->cnpj,
             );
 

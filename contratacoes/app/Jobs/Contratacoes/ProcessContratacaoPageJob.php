@@ -71,7 +71,8 @@ class ProcessContratacaoPageJob implements ShouldQueue
             'page'    => $this->pagina,
         ]);
 
-        if ($failureHandler->shouldWait($this, "Job da página {$this->pagina}", PncpCircuitBreaker::SCOPE_CONTRATACOES)) {
+        if ($failureHandler->shouldWait($this, "Job da página {$this->pagina}", PncpCircuitBreaker::SCOPE_CONTRATACOES))
+        {
             return;
         }
 
@@ -85,13 +86,15 @@ class ProcessContratacaoPageJob implements ShouldQueue
             'tamanhoPagina'               => $this->tamanhoPagina,
         ]);
 
-        try {
+        try
+        {
             $response = $client->getContratacoes($queryParams);
 
             // A API respondeu: qualquer pausa em curso pode ser encerrada.
             $circuitBreaker->recordSuccess(PncpCircuitBreaker::SCOPE_CONTRATACOES);
 
-            if (! $response || empty($response->data)) {
+            if (! $response || empty($response->data))
+            {
                 $this->markCyclePageDone($cycleTracker, $documentsSequencer, $cicloRecorder, 0);
 
                 return;
@@ -103,16 +106,20 @@ class ProcessContratacaoPageJob implements ShouldQueue
             $syncAction->handle($response->data);
 
             $this->markCyclePageDone($cycleTracker, $documentsSequencer, $cicloRecorder, count($response->data));
-        } catch (\Throwable $error) {
+
+        }
+        catch (\Throwable $error)
+        {
             // Reagendado (API indisponível ou em pausa): a página ainda vai
             // rodar, então o contador do ciclo não pode avançar.
             if ($failureHandler->handle($error, $this, PncpCircuitBreaker::SCOPE_CONTRATACOES, [
-                'action'      => 'ProcessContratacaoPageJob',
-                'page'        => $this->pagina,
-                'page_size'   => $this->tamanhoPagina,
-                'attempt'     => $this->attempts(),
-                'modalidade'  => $this->dto->codigoModalidadeContratacao,
-            ])) {
+                'action'     => 'ProcessContratacaoPageJob',
+                'page'       => $this->pagina,
+                'page_size'  => $this->tamanhoPagina,
+                'attempt'    => $this->attempts(),
+                'modalidade' => $this->dto->codigoModalidadeContratacao,
+            ]))
+            {
                 return;
             }
 
@@ -136,9 +143,11 @@ class ProcessContratacaoPageJob implements ShouldQueue
         CicloContratacaoRecorder $cicloRecorder,
         int $itemsProcessed
     ): ?array {
+
         $summary = $cycleTracker->markPageDone($this->syncId, $itemsProcessed);
 
-        if ($summary === null) {
+        if ($summary === null)
+        {
             return null;
         }
 
@@ -203,7 +212,8 @@ class ProcessContratacaoPageJob implements ShouldQueue
             0
         );
 
-        if ($summary === null) {
+        if ($summary === null)
+        {
             app(CicloContratacaoRecorder::class)->abandon(
                 $this->syncId,
                 'ProcessContratacaoPageJob esgotou o retryUntil na página ' . $this->pagina

@@ -8,7 +8,8 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('ciclos_pca', function (Blueprint $table) {
+        Schema::create('ciclos_pca', function (Blueprint $table)
+        {
             $table->id();
             $table->uuid('sync_id')->unique()->nullable();
             $table->string('cnpj_orgao', 14);

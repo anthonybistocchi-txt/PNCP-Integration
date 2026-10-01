@@ -22,21 +22,27 @@ class SyncContratacaoDocumentosAction
      */
     public function handle(array $items): void
     {
-        if (empty($items)) {
+        if (empty($items))
+        {
             return;
         }
 
-        try {
-            DB::transaction(function () use ($items) {
-                foreach ($items as $item) {
+        try
+        {
+            DB::transaction(function () use ($items)
+            {
+                foreach ($items as $item)
+                {
                     Contratacao::where('numero_controle_pncp', $item['numero_controle_pncp'])
                         ->update([
-                            'documentos'           => $item['documentos'],
+                            'documentos'                  => $item['documentos'],
                             'documentos_sincronizados_em' => $item['documentos_sincronizados_em'],
                         ]);
                 }
             });
-        } catch (\Throwable $error) {
+        }
+        catch (\Throwable $error)
+        {
             Log::error('PNCP_DOCUMENTS_UPSERT_DB_ERROR', [
                 'reason'     => 'Falha ao executar o Bulk Upsert de documentos no banco de dados.',
                 'message'    => $error->getMessage(),

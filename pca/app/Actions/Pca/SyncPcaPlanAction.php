@@ -12,17 +12,20 @@ class SyncPcaPlanAction
      */
     public function handle(array $plans): void
     {
-        if (empty($plans)) {
+        if (empty($plans))
+        {
             return;
         }
 
         $upsertData = [];
 
-        foreach ($plans as $plan) {
+        foreach ($plans as $plan)
+        {
             $upsertData[] = $plan->toArray();
         }
 
-        try {
+        try
+        {
             PcaPlan::upsert(
                 $upsertData,
                 ['cnpj_orgao', 'ano_pca', 'sequencial_pca'],
@@ -36,10 +39,12 @@ class SyncPcaPlanAction
                     'payload_completo',
                 ]
             );
-        } catch (\Throwable $error) {
+        }
+        catch (\Throwable $error)
+        {
             Log::error('PNCP_PCA_PLAN_UPSERT_ERROR', [
-                'reason' => 'Falha ao executar Bulk Upsert de PcaPlans',
-                'message' => $error->getMessage(),
+                'reason'     => 'Falha ao executar Bulk Upsert de PcaPlans',
+                'message'    => $error->getMessage(),
                 'batch_size' => count($upsertData),
             ]);
 

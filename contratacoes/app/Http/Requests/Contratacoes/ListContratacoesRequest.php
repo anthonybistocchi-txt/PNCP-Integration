@@ -45,20 +45,20 @@ class ListContratacoesRequest extends FormRequest
         $validated = $this->validated();
 
         return new ListContratacoesDTO(
-            dataInicial:                 $validated['dataInicial'],
-            dataFinal:                   $validated['dataFinal'],
-            codigoModalidadeContratacao: (int) $validated['codigoModalidadeContratacao'],
-            uf:                          isset($validated['uf']) ? strtoupper($validated['uf']) : null,
-            codigoMunicipioIbge:         $validated['codigoMunicipioIbge'] ?? null,
-            poderId:                     $validated['poderId'] ?? null,
-            esferaId:                    $validated['esferaId'] ?? null,
-            situacaoCompraId:            $validated['situacaoCompraId'] ?? null,
-            modoDisputaId:               $validated['modoDisputaId'] ?? null,
+            dataInicial:                       $validated['dataInicial'],
+            dataFinal:                         $validated['dataFinal'],
+            codigoModalidadeContratacao:       (int) $validated['codigoModalidadeContratacao'],
+            uf:                                isset($validated['uf']) ? strtoupper($validated['uf']) : null,
+            codigoMunicipioIbge:               $validated['codigoMunicipioIbge'] ?? null,
+            poderId:                           $validated['poderId'] ?? null,
+            esferaId:                          $validated['esferaId'] ?? null,
+            situacaoCompraId:                  $validated['situacaoCompraId'] ?? null,
+            modoDisputaId:                     $validated['modoDisputaId'] ?? null,
             tipoInstrumentoConvocatorioCodigo: $validated['tipoInstrumentoConvocatorioCodigo'] ?? null,
-            fontesOrcamentarias:         $validated['fontesOrcamentarias'] ?? null,
-            tipoData:                    $validated['tipoData'] ?? 'publicacao',
-            cursor:                      $validated['cursor'] ?? null,
-            limit:                       (int) ($validated['limit'] ?? 15),
+            fontesOrcamentarias:               $validated['fontesOrcamentarias'] ?? null,
+            tipoData:                          $validated['tipoData'] ?? 'publicacao',
+            cursor:                            $validated['cursor'] ?? null,
+            limit:                             (int) ($validated['limit'] ?? 15),
         );
     }
 

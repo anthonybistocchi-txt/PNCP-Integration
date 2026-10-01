@@ -20,7 +20,7 @@ class DatabaseSeeder extends Seeder
             AdminUserSeeder::class,
             // ContratacaoSeeder::class,
         ]);
-        
+
         // Mantém a criação do usuário de teste original se desejar
         // User::factory()->create([
         //     'name' => 'Test User',

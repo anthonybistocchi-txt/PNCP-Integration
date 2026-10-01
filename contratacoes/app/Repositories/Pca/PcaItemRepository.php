@@ -39,16 +39,20 @@ class PcaItemRepository
                 'planos_pca.nome_unidade',
             ])
             ->join('planos_pca', 'itens_pca.plano_pca_id', '=', 'planos_pca.id')
-            ->when($dto->ano, function (Builder $query) use ($dto) {
+            ->when($dto->ano, function (Builder $query) use ($dto)
+            {
                 $query->where('planos_pca.ano_pca', $dto->ano);
             })
-            ->when($dto->cnpj, function (Builder $query) use ($dto) {
+            ->when($dto->cnpj, function (Builder $query) use ($dto)
+            {
                 $query->where('planos_pca.cnpj_orgao', $dto->cnpj);
             })
-            ->when($dto->categoriaItem, function (Builder $query) use ($dto) {
+            ->when($dto->categoriaItem, function (Builder $query) use ($dto)
+            {
                 $query->where('itens_pca.categoria_item_pca', $dto->categoriaItem);
             })
-            ->when($dto->search, function (Builder $query) use ($dto) {
+            ->when($dto->search, function (Builder $query) use ($dto)
+            {
                 $search = DB::getPdo()->quote($dto->search);
                 $query->whereRaw("itens_pca.search_vector @@ websearch_to_tsquery('portuguese', {$search})");
             });

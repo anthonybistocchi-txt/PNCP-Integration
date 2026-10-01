@@ -19,23 +19,23 @@ class ProcessPcaItemsPageJobTest extends TestCase
     public function test_persists_items_from_the_array_payload()
     {
         $plan = PcaPlan::create([
-            'cnpj_orgao' => '12345678000199',
-            'ano_pca' => 2026,
-            'sequencial_pca' => 1,
+            'cnpj_orgao'           => '12345678000199',
+            'ano_pca'              => 2026,
+            'sequencial_pca'       => 1,
             'data_publicacao_pncp' => now(),
         ]);
 
         $syncId = (string) Str::uuid();
 
         PncpPcaCiclo::create([
-            'sync_id' => $syncId,
-            'cnpj_orgao' => '12345678000199',
-            'ano_pca' => 2026,
-            'sequencial_pca' => 1,
+            'sync_id'         => $syncId,
+            'cnpj_orgao'      => '12345678000199',
+            'ano_pca'         => 2026,
+            'sequencial_pca'  => 1,
             'total_anunciado' => 1,
-            'total_paginas' => 1,
-            'status' => 'started',
-            'started_at' => now(),
+            'total_paginas'   => 1,
+            'status'          => 'started',
+            'started_at'      => now(),
         ]);
 
         $tracker = $this->app->make(PncpSyncCycleTracker::class);
@@ -85,19 +85,19 @@ class ProcessPcaItemsPageJobTest extends TestCase
         );
 
         $this->assertDatabaseHas('itens_pca', [
-            'plano_pca_id' => $plan->id,
-            'numero_item' => 1,
-            'categoria_item_pca' => 1,
-            'categoria_item_pca_nome' => 'Material',
-            'pdm_codigo' => '5849',
-            'pdm_nome' => 'COPO DESCARTAVEL',
-            'descricao_item' => 'Descricao vinda do campo descricao',
+            'plano_pca_id'             => $plan->id,
+            'numero_item'              => 1,
+            'categoria_item_pca'       => 1,
+            'categoria_item_pca_nome'  => 'Material',
+            'pdm_codigo'               => '5849',
+            'pdm_nome'                 => 'COPO DESCARTAVEL',
+            'descricao_item'           => 'Descricao vinda do campo descricao',
             'grupo_contratacao_codigo' => '170201-8/2025',
         ]);
 
         $this->assertDatabaseHas('ciclos_pca', [
-            'sync_id' => $syncId,
-            'status' => 'finished',
+            'sync_id'           => $syncId,
+            'status'            => 'finished',
             'paginas_completas' => 1,
             'itens_processados' => 1,
         ]);

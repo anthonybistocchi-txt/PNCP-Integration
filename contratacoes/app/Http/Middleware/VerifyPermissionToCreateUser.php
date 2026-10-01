@@ -25,7 +25,8 @@ class VerifyPermissionToCreateUser
             $token !== env('ADMIN_API_KEY')
             &&
             $token !== $user->api_key
-        ) {
+        )
+        {
             return response()->json([
                 'error'      => 'forbidden',
                 'message'    => 'Você não tem permissão para criar usuários',

@@ -13,7 +13,8 @@ class GetMeAction
     {
         $user = User::where('email', $dto->email)->first();
 
-        if (!$user || !Hash::check($dto->password, $user->password) || !$user->isActive()) {
+        if (!$user || !Hash::check($dto->password, $user->password) || !$user->isActive())
+        {
             throw new ResourceNotFoundException('Usuário não encontrado.');
         }
 

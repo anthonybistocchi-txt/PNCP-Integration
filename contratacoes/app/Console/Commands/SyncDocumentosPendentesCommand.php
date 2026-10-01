@@ -25,7 +25,8 @@ class SyncDocumentosPendentesCommand extends Command
     {
         $modalidades = $this->resolverModalidades();
 
-        if ($modalidades === []) {
+        if ($modalidades === [])
+        {
             $this->error('Nenhuma modalidade válida. Use IDs de 1 a 10, separados por vírgula.');
             return self::FAILURE;
         }
@@ -40,7 +41,8 @@ class SyncDocumentosPendentesCommand extends Command
         // começado — na prática, nunca sairiam do lugar.
         $staggerMinutes = max(0, (int) config('pncp.pending_documents_stagger_minutes', 1));
 
-        foreach (array_values($modalidades) as $indice => $modalidade) {
+        foreach (array_values($modalidades) as $indice => $modalidade)
+        {
             $delayMinutes = $indice * $staggerMinutes;
 
             SyncDocumentosPendentesJob::dispatch($modalidade)
@@ -59,7 +61,8 @@ class SyncDocumentosPendentesCommand extends Command
     {
         $raw = trim((string) $this->option('modalidades'));
 
-        if ($raw === '') {
+        if ($raw === '')
+        {
             return $this->todasModalidades;
         }
 

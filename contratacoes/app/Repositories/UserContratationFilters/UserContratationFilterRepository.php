@@ -24,11 +24,11 @@ class UserContratationFilterRepository
         $now = now();
 
         $filterRows = array_map(static fn(string $filterValue): array => [
-            'user_id'     => $filterToSave->userId,
-            'filter_type' => $filterToSave->filterType,
-            'value'       => $filterValue,
-            'created_at'  => $now,
-            'updated_at'  => $now,
+            'user_id'                                                 => $filterToSave->userId,
+            'filter_type'                                             => $filterToSave->filterType,
+            'value'                                                   => $filterValue,
+            'created_at'                                              => $now,
+            'updated_at'                                              => $now,
         ], $filterToSave->values);
 
         UserContratationFilter::upsert(

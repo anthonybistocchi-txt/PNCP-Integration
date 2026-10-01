@@ -22,7 +22,7 @@ class ContratacaoFactory extends Factory
         $orgaos = ['00000000000191', '12345678000199', '98765432000199'];
         $modalidades = [6, 1, 2, 7, 8]; // Pregão, etc
         $ufs = ['SP', 'RJ', 'MG', 'DF', 'RS'];
-        
+
         // Geramos alguns textos de objetos realistas misturados com dados fake
         $objetos = [
             'Aquisição de equipamentos de informática, incluindo computadores, notebooks e monitores.',

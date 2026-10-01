@@ -28,13 +28,13 @@ class PncpPcaCiclo extends Model
     ];
 
     protected $casts = [
-        'ano_pca'          => 'integer',
-        'sequencial_pca'   => 'integer',
-        'total_anunciado'  => 'integer',
-        'total_paginas'    => 'integer',
-        'itens_processados'=> 'integer',
-        'paginas_completas'=> 'integer',
-        'started_at'       => 'datetime',
-        'finished_at'      => 'datetime',
+        'ano_pca'           => 'integer',
+        'sequencial_pca'    => 'integer',
+        'total_anunciado'   => 'integer',
+        'total_paginas'     => 'integer',
+        'itens_processados' => 'integer',
+        'paginas_completas' => 'integer',
+        'started_at'        => 'datetime',
+        'finished_at'       => 'datetime',
     ];
 }
