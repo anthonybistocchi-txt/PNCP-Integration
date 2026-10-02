@@ -8,6 +8,12 @@
 > Cada serviço tem o próprio Redis. O termo "listagem" foi aposentado: a fase 1
 > chama-se contratações. Caminhos abaixo que ainda digam o desenho antigo de
 > uma fila única estão superados por esta nota e pelo README.
+>
+> Para relembrar só os três comandos de contratações (regras, motivos e o que
+> contar para outra pessoa), use [`sync-contratacoes.md`](sync-contratacoes.md).
+> O equivalente do PCA está em [`../../pca/docs/sync-pca.md`](../../pca/docs/sync-pca.md).
+> A agenda descrita nas seções 5–9 abaixo pode divergir de `pca/routes/console.php`;
+> o guia do PCA segue o código.
 
 ---
 

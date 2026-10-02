@@ -10,4 +10,8 @@ Schedule::command('pncp:import-orgaos')->dailyAt('18:00');
 Schedule::command('pncp:discover-unidades')->dailyAt('20:00');
 
 // Sync diário dos planos e itens. Fila e workers próprios, Redis próprio.
+<<<<<<< Updated upstream
 Schedule::command('pncp:sync-pca')->dailyAt('12:30');
+=======
+//Schedule::command('pncp:sync-pca')->dailyAt('00:00');
+>>>>>>> Stashed changes
