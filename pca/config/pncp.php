@@ -229,11 +229,50 @@ return [
     | refazendo trabalho. 2h dá ~6x de margem sobre a espera real de um lote
     | numa janela saudável, e o abandono deixou de ser perda de dado.
     |
+    | PCA (72h) — o prazo é gravado no payload do job NO DESPACHO, e a fila é
+    | FIFO atrás de um limitador global (~1.800 req/h). Com 12h, a cauda de um
+    | lote cheio (75 mil páginas de 50 itens em 01/10 e 03/10) esperava mais
+    | que isso e morria em MaxAttemptsExceeded sem nunca ter sido tentada.
+    | Atenção: mudar este valor NÃO altera jobs que já estão na fila.
+    | O TTL dos contadores do PncpSyncCycleTracker e o uniqueFor do mestre
+    | derivam deste valor.
+    |
     */
     'retry_until_hours' => [
         'contratacoes'  => (int) env('PNCP_RETRY_UNTIL_HOURS_CONTRATACOES', 12),
-        'pca'           => (int) env('PNCP_RETRY_UNTIL_HOURS_PCA', 12),
+        'pca'           => (int) env('PNCP_RETRY_UNTIL_HOURS_PCA', 72),
         'documentos'    => (int) env('PNCP_RETRY_UNTIL_HOURS_DOCUMENTOS', 2),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | PCA: volume por rodada
+    |--------------------------------------------------------------------------
+    |
+    | page_size — itens por página de /itens. O PNCP aceita 500 e 1000 com
+    | conteúdo idêntico ao de 50 (testado em 03/10), e a latência é dominada
+    | por custo fixo (50 itens: 24s; 500: 8,8s; 1000: 12,8s). 500 reduz as
+    | páginas do catálogo de ~75,8 mil para ~13,8 mil. O upsert de 500 linhas
+    | usa ~12 mil parâmetros, abaixo do limite de 65.535 do Postgres.
+    |
+    | recheck_empty_days — órgão sem nenhum PCA no ano (74% dos órgãos ativos)
+    | só é reconsultado após este prazo. Sem isso cada rodada gastava uma
+    | requisição por órgão para receber 404.
+    |
+    | refresh_after_days — rede de segurança: plano cujos itens foram baixados
+    | há mais que isso volta a ser pendente mesmo sem `dataAtualizacao` nova,
+    | caso o PNCP altere itens sem mexer na data do plano.
+    |
+    | faltantes_max_per_run — teto de planos despachados por execução do
+    | pncp:sync-pca-faltantes (0 = sem teto). Evita que um passivo grande
+    | encha a fila de uma vez e vença o prazo de novo.
+    |
+    */
+    'pca' => [
+        'page_size'             => (int) env('PNCP_PCA_PAGE_SIZE', 500),
+        'recheck_empty_days'    => (int) env('PNCP_PCA_RECHECK_EMPTY_DAYS', 30),
+        'refresh_after_days'    => (int) env('PNCP_PCA_REFRESH_AFTER_DAYS', 30),
+        'faltantes_max_per_run' => (int) env('PNCP_PCA_FALTANTES_MAX_PER_RUN', 2000),
     ],
 
     /*

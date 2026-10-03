@@ -20,13 +20,17 @@ class PcaPlan extends Model
         'data_inclusao',
         'data_atualizacao',
         'payload_completo',
+        'itens_sincronizados_em',
+        'itens_total_sincronizado',
     ];
 
     protected $casts = [
-        'data_publicacao_pncp' => 'date',
-        'data_inclusao'        => 'datetime',
-        'data_atualizacao'     => 'datetime',
-        'payload_completo'     => 'object',
+        'data_publicacao_pncp'     => 'date',
+        'data_inclusao'            => 'datetime',
+        'data_atualizacao'         => 'datetime',
+        'payload_completo'         => 'object',
+        'itens_sincronizados_em'   => 'datetime',
+        'itens_total_sincronizado' => 'integer',
     ];
 
     public function itens(): HasMany

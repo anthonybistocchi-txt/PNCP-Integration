@@ -6,6 +6,7 @@ use App\Actions\Pncp\SyncPncpOrgaoUnidadesAction;
 use App\DTOs\Pncp\PncpOrgaoUnidadeData;
 use App\Integrations\PNCP\PncpCircuitBreaker;
 use App\Integrations\PNCP\PncpClient;
+use App\Repositories\Contratacoes\ContratacaoRepository;
 use App\Support\ErrorHandling\PncpFailureHandler;
 use DateTimeInterface;
 use Illuminate\Bus\Queueable;
@@ -13,8 +14,6 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
-use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class DiscoverPncpUnidadesJob implements ShouldQueue
@@ -32,13 +31,14 @@ class DiscoverPncpUnidadesJob implements ShouldQueue
 
     public function retryUntil(): DateTimeInterface
     {
-        return now()->addHours((int) config('pncp.retry_until_hours.pca', 12));
+        return now()->addHours((int) config('pncp.retry_until_hours.pca', 72));
     }
 
     public function handle(
         PncpClient $client,
         SyncPncpOrgaoUnidadesAction $syncAction,
-        PncpFailureHandler $failureHandler
+        PncpFailureHandler $failureHandler,
+        ContratacaoRepository $contratacoes
     ): void {
 
         if ($failureHandler->shouldWait($this, "unidades_{$this->cnpj}", PncpCircuitBreaker::SCOPE_PCA))
@@ -64,13 +64,13 @@ class DiscoverPncpUnidadesJob implements ShouldQueue
             // getPcaUnidades() traz poder/esfera e codigo/nome, mas NÃO traz
             // UF/IBGE/município. Esses campos vivem em unidadeOrgao das
             // contratações — enriquecemos sem HTTP extra apenas buscando no banco de dados.
-            $geoByCodigo = $this->geoFromContratacoes();
+            $geoByCodigo = $contratacoes->geoByCodigoUnidade($this->cnpj);
 
             $unidadesData = [];
             foreach ($unidades as $unidade)
             {
                 $codigoUnidade = (string) ($unidade->codigoUnidade ?? '');
-                $geo = $geoByCodigo->get($codigoUnidade);
+                $geo           = $geoByCodigo->get($codigoUnidade);
 
                 $unidadesData[] = new PncpOrgaoUnidadeData(
                     cnpjOrgao:     $this->cnpj,
@@ -107,30 +107,6 @@ class DiscoverPncpUnidadesJob implements ShouldQueue
                 'attempt' => $this->attempts(),
             ]);
         }
-    }
-
-    /**
-     * Mapa codigoUnidade → UF/IBGE/município a partir do payload das contratações
-     * deste órgão (registro mais recente por unidade).
-     *
-     * @return Collection<string, object{uf_sigla: ?string, codigo_ibge: ?string, nome_municipio: ?string}>
-     */
-    private function geoFromContratacoes(): Collection
-    {
-        return DB::table('contratacoes')
-            ->selectRaw("
-                DISTINCT ON (payload_completo->'unidadeOrgao'->>'codigoUnidade')
-                payload_completo->'unidadeOrgao'->>'codigoUnidade' AS codigo_unidade,
-                payload_completo->'unidadeOrgao'->>'ufSigla' AS uf_sigla,
-                payload_completo->'unidadeOrgao'->>'codigoIbge' AS codigo_ibge,
-                payload_completo->'unidadeOrgao'->>'municipioNome' AS nome_municipio
-            ")
-            ->where('orgao_cnpj', $this->cnpj)
-            ->whereRaw("payload_completo->'unidadeOrgao'->>'codigoUnidade' IS NOT NULL")
-            ->orderByRaw("payload_completo->'unidadeOrgao'->>'codigoUnidade'")
-            ->orderByRaw('data_atualizacao_global DESC NULLS LAST')
-            ->get()
-            ->keyBy('codigo_unidade');
     }
 
     private function intOrNull(mixed $value): ?int

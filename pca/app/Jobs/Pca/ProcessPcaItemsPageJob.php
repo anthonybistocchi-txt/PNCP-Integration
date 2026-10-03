@@ -7,8 +7,8 @@ use App\DTOs\Pca\PcaItemData;
 use App\Integrations\PNCP\PncpCircuitBreaker;
 use App\Integrations\PNCP\PncpClient;
 use App\Integrations\PNCP\PncpSyncCycleTracker;
-use App\Models\Pca\PcaPlan;
-use App\Models\Pca\PncpPcaCiclo;
+use App\Repositories\Pca\PcaPlanRepository;
+use App\Repositories\Pca\PncpPcaCicloRepository;
 use App\Support\ErrorHandling\PncpFailureHandler;
 use DateTimeInterface;
 use Illuminate\Bus\Queueable;
@@ -36,7 +36,7 @@ class ProcessPcaItemsPageJob implements ShouldQueue
 
     public function retryUntil(): DateTimeInterface
     {
-        return now()->addHours((int) config('pncp.retry_until_hours.pca', 12));
+        return now()->addHours((int) config('pncp.retry_until_hours.pca', 72));
     }
 
     public function handle(
@@ -44,7 +44,9 @@ class ProcessPcaItemsPageJob implements ShouldQueue
         PncpCircuitBreaker $circuitBreaker,
         PncpFailureHandler $failureHandler,
         PncpSyncCycleTracker $cycleTracker,
-        SyncPcaItemsAction $upsertAction
+        SyncPcaItemsAction $upsertAction,
+        PcaPlanRepository $planos,
+        PncpPcaCicloRepository $ciclos
     ): void {
 
         if ($failureHandler->shouldWait($this, 'Job Page PCA', PncpCircuitBreaker::SCOPE_PCA))
@@ -63,16 +65,13 @@ class ProcessPcaItemsPageJob implements ShouldQueue
 
             if ($itens === [])
             {
-                $this->markCyclePageDone($cycleTracker, 0);
+                $this->markCyclePageDone($cycleTracker, $ciclos, $planos, 0);
 
                 return;
             }
 
             // Precisamos do ID do pca_plan para inserir
-            $pcaPlan = PcaPlan::where('cnpj_orgao', $this->cnpj)
-                ->where('ano_pca', $this->ano)
-                ->where('sequencial_pca', $this->sequencial)
-                ->first();
+            $pcaPlan = $planos->findByChave($this->cnpj, $this->ano, $this->sequencial);
 
             if (! $pcaPlan)
             {
@@ -122,7 +121,7 @@ class ProcessPcaItemsPageJob implements ShouldQueue
 
             $upsertAction->handle($itemsData);
 
-            $this->markCyclePageDone($cycleTracker, count($itemsData));
+            $this->markCyclePageDone($cycleTracker, $ciclos, $planos, count($itemsData));
 
         }
         catch (\Throwable $error)
@@ -142,7 +141,7 @@ class ProcessPcaItemsPageJob implements ShouldQueue
             }
 
             // Falha permanente: conta a página no ciclo com 0 itens.
-            $this->markCyclePageDone($cycleTracker, 0);
+            $this->markCyclePageDone($cycleTracker, $ciclos, $planos, 0);
         }
     }
 
@@ -152,8 +151,12 @@ class ProcessPcaItemsPageJob implements ShouldQueue
      *
      * @return array{units_completed: int, items_processed: int, total_records: int}|null
      */
-    private function markCyclePageDone(PncpSyncCycleTracker $cycleTracker, int $itemsProcessed): ?array
-    {
+    private function markCyclePageDone(
+        PncpSyncCycleTracker $cycleTracker,
+        PncpPcaCicloRepository $ciclos,
+        PcaPlanRepository $planos,
+        int $itemsProcessed
+    ): ?array {
         $summary = $cycleTracker->markPageDone($this->syncId, $itemsProcessed);
 
         if ($summary === null)
@@ -161,14 +164,32 @@ class ProcessPcaItemsPageJob implements ShouldQueue
             return null;
         }
 
-        PncpPcaCiclo::where('sync_id', $this->syncId)
-            ->where('status', PncpPcaCiclo::STATUS_STARTED)
-            ->update([
-                'status'            => PncpPcaCiclo::STATUS_FINISHED,
-                'finished_at'       => now(),
-                'paginas_completas' => $summary['units_completed'],
-                'itens_processados' => $summary['items_processed'],
-            ]);
+        $ciclo = $ciclos->findBySyncId($this->syncId);
+
+        $ciclos->finishPlanIfStarted(
+            $this->syncId,
+            $summary['units_completed'],
+            $summary['items_processed']
+        );
+
+        // Marca d'água dos itens: só quando TODAS as páginas trouxeram itens.
+        // Página que morreu conta como 0 itens, então o ciclo fecha com
+        // processados < anunciado, a marca não é gravada e o plano continua
+        // pendente para o sync-pca / sync-pca-faltantes.
+        // `started_at` (início do download) e não now(): uma atualização do
+        // plano feita enquanto baixávamos tem data posterior e é detectada.
+        if ($ciclo !== null
+            && $ciclo->started_at !== null
+            && $summary['items_processed'] >= (int) $ciclo->total_anunciado
+        ) {
+            $planos->markItensSincronizados(
+                $this->cnpj,
+                $this->ano,
+                $this->sequencial,
+                $ciclo->started_at,
+                $summary['items_processed']
+            );
+        }
 
         return $summary;
     }
@@ -185,16 +206,18 @@ class ProcessPcaItemsPageJob implements ShouldQueue
             'message'    => $exception->getMessage(),
         ]);
 
-        $summary = $this->markCyclePageDone(app(PncpSyncCycleTracker::class), 0);
-
-        if ($summary === null)
-        {
-            PncpPcaCiclo::where('sync_id', $this->syncId)
-                ->where('status', PncpPcaCiclo::STATUS_STARTED)
-                ->update([
-                    'status'      => PncpPcaCiclo::STATUS_ABANDONED,
-                    'finished_at' => now(),
-                ]);
-        }
+        // A página morta conta como concluída com 0 itens. Quando for a última,
+        // o ciclo fecha como `finished` com itens_processados < total_anunciado
+        // (gap). NÃO abandonamos o ciclo aqui: antes, a primeira página a
+        // estourar o prazo marcava o plano inteiro como `abandoned` enquanto
+        // as demais ainda estavam na fila ou sendo gravadas, e o resumo final
+        // (itens/páginas) nunca era escrito. Se os contadores do Redis
+        // expirarem, o ciclo fica `started` e vira gap pela idade.
+        $this->markCyclePageDone(
+            app(PncpSyncCycleTracker::class),
+            app(PncpPcaCicloRepository::class),
+            app(PcaPlanRepository::class),
+            0
+        );
     }
 }

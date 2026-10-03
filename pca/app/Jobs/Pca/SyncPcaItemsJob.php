@@ -5,10 +5,12 @@ namespace App\Jobs\Pca;
 use App\Integrations\PNCP\PncpCircuitBreaker;
 use App\Integrations\PNCP\PncpClient;
 use App\Integrations\PNCP\PncpSyncCycleTracker;
-use App\Models\Pca\PncpPcaCiclo;
+use App\Repositories\Pca\PcaPlanRepository;
+use App\Repositories\Pca\PncpPcaCicloRepository;
 use App\Support\ErrorHandling\PncpFailureHandler;
 use DateTimeInterface;
 use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
@@ -16,7 +18,7 @@ use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
-class SyncPcaItemsJob implements ShouldQueue
+class SyncPcaItemsJob implements ShouldQueue, ShouldBeUnique
 {
     public $timeout = 300;
     public $backoff = [120, 300, 600];
@@ -31,16 +33,37 @@ class SyncPcaItemsJob implements ShouldQueue
         protected int $sequencial
     ) {}
 
+    /**
+     * Um sub-mestre por plano. Sem isso, o sync-pca e o sync-pca-faltantes
+     * (ou duas execuções do faltantes) enfileirariam o mesmo plano duas vezes
+     * e baixariam as páginas em dobro contra o mesmo limitador.
+     */
+    public function uniqueId(): string
+    {
+        return "{$this->cnpj}:{$this->ano}:{$this->sequencial}";
+    }
+
+    /**
+     * O lock cobre a espera na fila (é liberado quando o job termina ou
+     * falha), então o teto acompanha o prazo do próprio job.
+     */
+    public function uniqueFor(): int
+    {
+        return (int) config('pncp.retry_until_hours.pca', 72) * 3600;
+    }
+
     public function retryUntil(): DateTimeInterface
     {
-        return now()->addHours((int) config('pncp.retry_until_hours.pca', 12));
+        return now()->addHours((int) config('pncp.retry_until_hours.pca', 72));
     }
 
     public function handle(
         PncpClient $client,
         PncpCircuitBreaker $circuitBreaker,
         PncpFailureHandler $failureHandler,
-        PncpSyncCycleTracker $cycleTracker
+        PncpSyncCycleTracker $cycleTracker,
+        PcaPlanRepository $planos,
+        PncpPcaCicloRepository $ciclos
     ): void {
         Log::withContext(['job_id' => $this->job ? $this->job->getJobId() : 'sub-master-pca']);
 
@@ -51,7 +74,9 @@ class SyncPcaItemsJob implements ShouldQueue
             return;
         }
 
-        $tamanhoPagina = 50;
+        // 500 itens por página: o PNCP devolve conteúdo idêntico ao de 50 com
+        // ~5,5x menos requisições no catálogo (ver config/pncp.php).
+        $tamanhoPagina = max(1, (int) config('pncp.pca.page_size', 500));
 
         try
         {
@@ -61,15 +86,11 @@ class SyncPcaItemsJob implements ShouldQueue
 
             if ($totalRecords <= 0)
             {
-                PncpPcaCiclo::create([
-                    'sync_id'        => (string) Str::uuid(),
-                    'cnpj_orgao'     => $this->cnpj,
-                    'ano_pca'        => $this->ano,
-                    'sequencial_pca' => $this->sequencial,
-                    'status'         => PncpPcaCiclo::STATUS_EMPTY,
-                    'started_at'     => $startedAt,
-                    'finished_at'    => now(),
-                ]);
+                $ciclos->createPlanEmpty($this->cnpj, $this->ano, $this->sequencial, $startedAt);
+
+                // Plano sem itens também está "em dia": sem a marca ele seria
+                // pendente para sempre e reconsultado a cada rodada.
+                $planos->markItensSincronizados($this->cnpj, $this->ano, $this->sequencial, $startedAt, 0);
 
                 return;
             }
@@ -78,16 +99,15 @@ class SyncPcaItemsJob implements ShouldQueue
             $this->syncId = (string) Str::uuid();
 
             $cycleTracker->start($this->syncId, $totalPaginas, $totalRecords);
-            PncpPcaCiclo::create([
-                'sync_id'         => $this->syncId,
-                'cnpj_orgao'      => $this->cnpj,
-                'ano_pca'         => $this->ano,
-                'sequencial_pca'  => $this->sequencial,
-                'total_anunciado' => $totalRecords,
-                'total_paginas'   => $totalPaginas,
-                'status'          => PncpPcaCiclo::STATUS_STARTED,
-                'started_at'      => $startedAt,
-            ]);
+            $ciclos->createPlanStarted(
+                $this->syncId,
+                $this->cnpj,
+                $this->ano,
+                $this->sequencial,
+                $totalRecords,
+                $totalPaginas,
+                $startedAt
+            );
 
             for ($pagina = 1; $pagina <= $totalPaginas; $pagina++)
             {
@@ -116,25 +136,15 @@ class SyncPcaItemsJob implements ShouldQueue
         // Falhou antes de medir a quantidade (ex.: API fora do ar durante todo
         // o retryUntil): o ciclo de plano nem chegou a ser criado. Registra um
         // registro abandonado para o gap ficar visível em ciclos_pca.
+        $ciclos = app(PncpPcaCicloRepository::class);
+
         if ($this->syncId === '')
         {
-            PncpPcaCiclo::create([
-                'sync_id'        => (string) Str::uuid(),
-                'cnpj_orgao'     => $this->cnpj,
-                'ano_pca'        => $this->ano,
-                'sequencial_pca' => $this->sequencial,
-                'status'         => PncpPcaCiclo::STATUS_ABANDONED,
-                'finished_at'    => now(),
-            ]);
+            $ciclos->createPlanAbandoned($this->cnpj, $this->ano, $this->sequencial);
 
             return;
         }
 
-        PncpPcaCiclo::where('sync_id', $this->syncId)
-            ->where('status', PncpPcaCiclo::STATUS_STARTED)
-            ->update([
-                'status'      => PncpPcaCiclo::STATUS_ABANDONED,
-                'finished_at' => now(),
-            ]);
+        $ciclos->abandonIfStarted($this->syncId);
     }
 }

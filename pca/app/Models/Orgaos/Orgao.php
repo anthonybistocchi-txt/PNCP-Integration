@@ -17,10 +17,16 @@ class Orgao extends Model
         'esfera',
         'ativo',
         'importado_de',
+        'pca_ano_verificado',
+        'pca_verificado_em',
+        'pca_tem_plano',
     ];
 
     protected $casts = [
-        'ativo' => 'boolean',
+        'ativo'              => 'boolean',
+        'pca_tem_plano'      => 'boolean',
+        'pca_ano_verificado' => 'integer',
+        'pca_verificado_em'  => 'datetime',
     ];
 
     public function plans(): HasMany

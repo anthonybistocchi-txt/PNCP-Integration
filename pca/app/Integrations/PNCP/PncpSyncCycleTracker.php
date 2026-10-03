@@ -6,7 +6,13 @@ use Illuminate\Support\Facades\Cache;
 
 class PncpSyncCycleTracker
 {
-    private const TTL_HOURS = 24;
+    /**
+     * Folga somada à janela de retentativa do PCA: os contadores precisam
+     * sobreviver ao último job que ainda pode concluir uma página. Se
+     * expirarem antes, `markPageDone` recomeçaria o `done` do zero e o ciclo
+     * jamais fecharia (ficaria `started` até virar gap por idade).
+     */
+    private const TTL_MARGIN_HOURS = 12;
 
     /**
      * TTL da trava de "modalidade ativa" (ver abaixo). Precisa cobrir o pior
@@ -31,7 +37,9 @@ class PncpSyncCycleTracker
      */
     public function start(string $syncId, int $totalUnits, int $totalRecords = 0): void
     {
-        $ttl = now()->addHours(self::TTL_HOURS);
+        $ttl = now()->addHours(
+            (int) config('pncp.retry_until_hours.pca', 72) + self::TTL_MARGIN_HOURS
+        );
 
         Cache::put($this->doneKey($syncId), 0, $ttl);
         Cache::put($this->totalKey($syncId), $totalUnits, $ttl);

@@ -7,16 +7,84 @@ use App\Integrations\PNCP\PncpClient;
 use App\Integrations\PNCP\PncpSyncCycleTracker;
 use App\Jobs\Pca\ProcessPcaItemsPageJob;
 use App\Jobs\Pca\SyncPcaItemsJob;
+use App\Models\Pca\PcaPlan;
+use App\Repositories\Pca\PcaPlanRepository;
+use App\Repositories\Pca\PncpPcaCicloRepository;
 use App\Support\ErrorHandling\PncpFailureHandler;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Support\Facades\Bus;
 use Mockery;
 use Tests\TestCase;
 
 class SyncPcaItemsJobTest extends TestCase
 {
+    public function test_uses_500_items_per_page_by_default()
+    {
+        Bus::fake();
+
+        $client = Mockery::mock(PncpClient::class);
+        $client->shouldReceive('getPcaItensQuantidade')->once()->andReturn(1200);
+
+        $job = new SyncPcaItemsJob('12345678000199', 2026, 1);
+
+        $job->handle(
+            $client,
+            $this->app->make(PncpCircuitBreaker::class),
+            $this->app->make(PncpFailureHandler::class),
+            $this->app->make(PncpSyncCycleTracker::class),
+            $this->app->make(PcaPlanRepository::class),
+            $this->app->make(PncpPcaCicloRepository::class),
+        );
+
+        // 1200 itens / 500 por página = 3 páginas (500 + 500 + 200).
+        Bus::assertDispatchedTimes(ProcessPcaItemsPageJob::class, 3);
+        Bus::assertDispatched(
+            ProcessPcaItemsPageJob::class,
+            fn (ProcessPcaItemsPageJob $page) => (fn () => $this->tamanhoPagina)->call($page) === 500
+        );
+
+        $this->assertDatabaseHas('ciclos_pca', [
+            'sequencial_pca'  => 1,
+            'total_anunciado' => 1200,
+            'total_paginas'   => 3,
+        ]);
+    }
+
+    public function test_page_size_comes_from_config()
+    {
+        Bus::fake();
+        config(['pncp.pca.page_size' => 50]);
+
+        $client = Mockery::mock(PncpClient::class);
+        $client->shouldReceive('getPcaItensQuantidade')->once()->andReturn(120);
+
+        (new SyncPcaItemsJob('12345678000199', 2026, 1))->handle(
+            $client,
+            $this->app->make(PncpCircuitBreaker::class),
+            $this->app->make(PncpFailureHandler::class),
+            $this->app->make(PncpSyncCycleTracker::class),
+            $this->app->make(PcaPlanRepository::class),
+            $this->app->make(PncpPcaCicloRepository::class),
+        );
+
+        Bus::assertDispatchedTimes(ProcessPcaItemsPageJob::class, 3);
+    }
+
+    public function test_is_unique_per_plan_for_the_retry_window()
+    {
+        config(['pncp.retry_until_hours.pca' => 72]);
+
+        $job = new SyncPcaItemsJob('12345678000199', 2026, 7);
+
+        $this->assertInstanceOf(ShouldBeUnique::class, $job);
+        $this->assertSame('12345678000199:2026:7', $job->uniqueId());
+        $this->assertSame(72 * 3600, $job->uniqueFor());
+    }
+
     public function test_derives_page_count_from_itens_quantidade()
     {
         Bus::fake();
+        config(['pncp.pca.page_size' => 50]);
 
         $client = Mockery::mock(PncpClient::class);
         $client->shouldReceive('getPcaItensQuantidade')
@@ -31,6 +99,8 @@ class SyncPcaItemsJobTest extends TestCase
             $this->app->make(PncpCircuitBreaker::class),
             $this->app->make(PncpFailureHandler::class),
             $this->app->make(PncpSyncCycleTracker::class),
+            $this->app->make(PcaPlanRepository::class),
+            $this->app->make(PncpPcaCicloRepository::class),
         );
 
         // 120 itens / 50 por página = 3 páginas.
@@ -60,6 +130,8 @@ class SyncPcaItemsJobTest extends TestCase
             $this->app->make(PncpCircuitBreaker::class),
             $this->app->make(PncpFailureHandler::class),
             $this->app->make(PncpSyncCycleTracker::class),
+            $this->app->make(PcaPlanRepository::class),
+            $this->app->make(PncpPcaCicloRepository::class),
         );
 
         Bus::assertNotDispatched(ProcessPcaItemsPageJob::class);
@@ -70,5 +142,32 @@ class SyncPcaItemsJobTest extends TestCase
             'sequencial_pca' => 1,
             'status'         => 'empty',
         ]);
+    }
+
+    public function test_empty_plan_gets_watermark_so_it_is_not_pending_forever()
+    {
+        Bus::fake();
+
+        $plan = PcaPlan::create([
+            'cnpj_orgao'     => '12345678000199',
+            'ano_pca'        => 2026,
+            'sequencial_pca' => 1,
+        ]);
+
+        $client = Mockery::mock(PncpClient::class);
+        $client->shouldReceive('getPcaItensQuantidade')->once()->andReturn(0);
+
+        (new SyncPcaItemsJob('12345678000199', 2026, 1))->handle(
+            $client,
+            $this->app->make(PncpCircuitBreaker::class),
+            $this->app->make(PncpFailureHandler::class),
+            $this->app->make(PncpSyncCycleTracker::class),
+            $this->app->make(PcaPlanRepository::class),
+            $this->app->make(PncpPcaCicloRepository::class),
+        );
+
+        $plan->refresh();
+        $this->assertNotNull($plan->itens_sincronizados_em);
+        $this->assertSame(0, $plan->itens_total_sincronizado);
     }
 }
