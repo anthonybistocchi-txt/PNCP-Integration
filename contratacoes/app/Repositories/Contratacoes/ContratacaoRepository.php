@@ -10,6 +10,7 @@ use App\Models\Contratacoes\Contratacao;
 use App\Support\Pagination\Keyset;
 use App\Support\Pagination\KeysetPaginator;
 use App\Support\Search\ContratationKeywordFilter;
+use DateTimeInterface;
 
 class ContratacaoRepository
 {
@@ -95,15 +96,63 @@ class ContratacaoRepository
         return $this->paginator->paginate($query, $dto->cursor, $dto->limit, Keyset::contratacoes());
     }
 
+    /**
+     * Licitações da modalidade que ainda não tiveram documentos buscados.
+     *
+     * Com `$updatedSince`, recorta o que o ciclo de contratações acabou de
+     * tocar (Fase 2). Sem a data, é a varredura de pendentes: qualquer
+     * registro nulo, pelos mais recentes primeiro, com teto.
+     *
+     * @return list<array{numero_controle_pncp: string, orgao_cnpj: string, ano_compra: int, sequencial_compra: int}>
+     */
+    public function listPendingDocuments(int $modalidade, int $limit, ?DateTimeInterface $updatedSince = null): array
+    {
+        return Contratacao::query()
+            ->select([
+                'numero_controle_pncp',
+                'orgao_cnpj',
+                'ano_compra',
+                'sequencial_compra',
+            ])
+            ->whereNull('documentos_sincronizados_em')
+            ->where('codigo_modalidade_contratacao', $modalidade)
+            ->when($updatedSince, fn ($query) => $query->where('updated_at', '>=', $updatedSince))
+            ->whereNotNull('sequencial_compra')
+            ->orderByDesc('data_publicacao_pncp')
+            ->limit($limit)
+            ->get()
+            ->toArray();
+    }
+
+    /**
+     * Do lote informado, os números de controle que já tiveram documentos sincronizados.
+     *
+     * @param  list<string>  $numerosControle
+     * @return list<string>
+     */
+    public function numerosControleComDocumentos(array $numerosControle): array
+    {
+        if ($numerosControle === [])
+        {
+            return [];
+        }
+
+        return Contratacao::query()
+            ->whereIn('numero_controle_pncp', $numerosControle)
+            ->whereNotNull('documentos_sincronizados_em')
+            ->pluck('numero_controle_pncp')
+            ->all();
+    }
+
     private function emptyResult(): PaginatedResultDTO
     {
         return new PaginatedResultDTO(
-            data:        collect([]),
-            page:        1,
-            count_page:  0,
-            count:       0,
+            data: collect([]),
+            page: 1,
+            count_page: 0,
+            count: 0,
             next_cursor: null,
-            has_more:    false,
+            has_more: false,
         );
     }
 
@@ -111,9 +160,9 @@ class ContratacaoRepository
     {
         // Converte de Ymd para Y-m-d H:i:s
         // Ex: 20260101 -> 2026-01-01 00:00:00
-        $year = substr($dateString, 0, 4);
+        $year  = substr($dateString, 0, 4);
         $month = substr($dateString, 4, 2);
-        $day = substr($dateString, 6, 2);
+        $day   = substr($dateString, 6, 2);
 
         return "{$year}-{$month}-{$day} {$time}";
     }

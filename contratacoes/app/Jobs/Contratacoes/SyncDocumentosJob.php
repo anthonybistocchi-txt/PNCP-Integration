@@ -4,7 +4,7 @@ namespace App\Jobs\Contratacoes;
 
 use App\DTOs\Contratacoes\ListContratacoesDTO;
 use App\Integrations\PNCP\PncpSyncCycleTracker;
-use App\Models\Contratacoes\Contratacao;
+use App\Repositories\Contratacoes\ContratacaoRepository;
 use Carbon\Carbon;
 use DateTimeInterface;
 use Illuminate\Bus\Queueable;
@@ -69,7 +69,7 @@ class SyncDocumentosJob implements ShouldQueue, ShouldBeUnique
     /**
      * Execute the job.
      */
-    public function handle(PncpSyncCycleTracker $cycleTracker): void
+    public function handle(PncpSyncCycleTracker $cycleTracker, ContratacaoRepository $contratacoes): void
     {
         $startedAt = now();
 
@@ -85,28 +85,18 @@ class SyncDocumentosJob implements ShouldQueue, ShouldBeUnique
             ? Carbon::parse($this->cycleStartedAt)
             : now()->startOfDay();
 
-        // Seleciona apenas as colunas necessárias para a chamada HTTP.
-        $records = Contratacao::select([
-                'numero_controle_pncp',
-                'orgao_cnpj',
-                'ano_compra',
-                'sequencial_compra',
-            ])
-            ->whereNull('documentos_sincronizados_em')
-            ->where('codigo_modalidade_contratacao', $this->dto->codigoModalidadeContratacao)
-            ->where('updated_at', '>=', $touchedSince)
-            ->whereNotNull('sequencial_compra')
-            // Mesmo teto da drenagem, e pelo mesmo motivo: um ciclo só pode
-            // durar o que couber no seu retryUntil de 2h. Sem teto, a Fase 2
-            // da modalidade 6 despachava os ~5.300 registros do dia (≈2,9h de
-            // limitador) e, pior que morrer na cauda, mantinha a trava da
-            // modalidade presa durante todo esse tempo — bloqueando a
-            // drenagem exatamente na modalidade de maior volume. O que passar
-            // do teto continua nulo e entra na próxima janela, em ≤20 min.
-            ->orderByDesc('data_publicacao_pncp')
-            ->limit((int) config('pncp.pending_documents_max_per_run', 200))
-            ->get()
-            ->toArray();
+        // Mesmo teto da drenagem, e pelo mesmo motivo: um ciclo só pode
+        // durar o que couber no seu retryUntil de 2h. Sem teto, a Fase 2
+        // da modalidade 6 despachava os ~5.300 registros do dia (≈2,9h de
+        // limitador) e, pior que morrer na cauda, mantinha a trava da
+        // modalidade presa durante todo esse tempo — bloqueando a
+        // drenagem exatamente na modalidade de maior volume. O que passar
+        // do teto continua nulo e entra na próxima janela, em ≤20 min.
+        $records = $contratacoes->listPendingDocuments(
+            (int) $this->dto->codigoModalidadeContratacao,
+            (int) config('pncp.pending_documents_max_per_run', 200),
+            $touchedSince
+        );
 
         if (empty($records))
         {

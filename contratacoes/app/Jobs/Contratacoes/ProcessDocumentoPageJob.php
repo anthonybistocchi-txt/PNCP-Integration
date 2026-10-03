@@ -6,7 +6,7 @@ use App\Actions\Contratacoes\SyncContratacaoDocumentosAction;
 use App\Integrations\PNCP\PncpCircuitBreaker;
 use App\Integrations\PNCP\PncpClient;
 use App\Integrations\PNCP\PncpSyncCycleTracker;
-use App\Models\Contratacoes\Contratacao;
+use App\Repositories\Contratacoes\ContratacaoRepository;
 use App\Support\ErrorHandling\PncpFailureHandler;
 use Carbon\Carbon;
 use DateTimeInterface;
@@ -77,7 +77,8 @@ class ProcessDocumentoPageJob implements ShouldQueue
         SyncContratacaoDocumentosAction $syncAction,
         PncpCircuitBreaker $circuitBreaker,
         PncpFailureHandler $failureHandler,
-        PncpSyncCycleTracker $cycleTracker
+        PncpSyncCycleTracker $cycleTracker,
+        ContratacaoRepository $contratacoes
     ): void {
 
         Log::withContext([
@@ -93,7 +94,7 @@ class ProcessDocumentoPageJob implements ShouldQueue
         }
 
         // Retentativa não recomeça do zero: só busca o que ainda está nulo.
-        $pendentes = $this->itemsAindaPendentes();
+        $pendentes = $this->itemsAindaPendentes($contratacoes);
         $jaFeitos  = count($this->items) - count($pendentes);
 
         if ($pendentes === [])
@@ -180,13 +181,11 @@ class ProcessDocumentoPageJob implements ShouldQueue
      *
      * @return list<array{numero_controle_pncp: string, orgao_cnpj: string, ano_compra: int, sequencial_compra: int}>
      */
-    private function itemsAindaPendentes(): array
+    private function itemsAindaPendentes(ContratacaoRepository $contratacoes): array
     {
-        $jaBuscados = Contratacao::query()
-            ->whereIn('numero_controle_pncp', array_column($this->items, 'numero_controle_pncp'))
-            ->whereNotNull('documentos_sincronizados_em')
-            ->pluck('numero_controle_pncp')
-            ->all();
+        $jaBuscados = $contratacoes->numerosControleComDocumentos(
+            array_column($this->items, 'numero_controle_pncp')
+        );
 
         if ($jaBuscados === [])
         {

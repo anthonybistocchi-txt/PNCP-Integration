@@ -3,7 +3,7 @@
 namespace App\Jobs\Contratacoes;
 
 use App\Integrations\PNCP\PncpSyncCycleTracker;
-use App\Models\Contratacoes\Contratacao;
+use App\Repositories\Contratacoes\ContratacaoRepository;
 use DateTimeInterface;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
@@ -78,26 +78,17 @@ class SyncDocumentosPendentesJob implements ShouldQueue, ShouldBeUnique
     /**
      * Execute the job.
      */
-    public function handle(PncpSyncCycleTracker $cycleTracker): void
+    public function handle(PncpSyncCycleTracker $cycleTracker, ContratacaoRepository $contratacoes): void
     {
         $startedAt = now();
 
         // Sem filtro de data: pega qualquer pendência, de qualquer data — mas
         // com teto, pelos mais recentes primeiro (o passivo antigo tende a ser
         // de licitações já encerradas).
-        $records = Contratacao::select([
-                'numero_controle_pncp',
-                'orgao_cnpj',
-                'ano_compra',
-                'sequencial_compra',
-            ])
-            ->whereNull('documentos_sincronizados_em')
-            ->where('codigo_modalidade_contratacao', $this->modalidade)
-            ->whereNotNull('sequencial_compra')
-            ->orderByDesc('data_publicacao_pncp')
-            ->limit((int) config('pncp.pending_documents_max_per_run', 200))
-            ->get()
-            ->toArray();
+        $records = $contratacoes->listPendingDocuments(
+            $this->modalidade,
+            (int) config('pncp.pending_documents_max_per_run', 200)
+        );
 
         if (empty($records))
         {

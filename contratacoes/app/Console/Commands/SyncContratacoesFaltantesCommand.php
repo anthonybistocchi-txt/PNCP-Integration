@@ -4,9 +4,8 @@ namespace App\Console\Commands;
 
 use App\DTOs\Contratacoes\ListContratacoesDTO;
 use App\Jobs\Contratacoes\SyncContratacoesJob;
-use App\Models\Contratacoes\CicloContratacao;
+use App\Repositories\Contratacoes\CicloContratacaoRepository;
 use Illuminate\Console\Command;
-use Illuminate\Support\Collection;
 
 /**
  * Reprocessa gaps de contratacoes (ciclos_contratacao): abandoned, finished abaixo
@@ -19,9 +18,10 @@ class SyncContratacoesFaltantesCommand extends Command
 
     protected $description = 'Reprocessa ciclos de contratacoes PNCP incompletos (gaps em ciclos_contratacao).';
 
-    public function handle(): int
+    public function handle(CicloContratacaoRepository $cicloRepository): int
     {
-        $ciclos = $this->getCiclosIncompletos();
+        $retryHours = (int) config('pncp.retry_until_hours.contratacoes', 12);
+        $ciclos     = $cicloRepository->intervalosIncompletos($retryHours);
 
         if ($ciclos->isEmpty())
         {
@@ -35,13 +35,13 @@ class SyncContratacoesFaltantesCommand extends Command
         foreach ($ciclos as $ciclo)
         {
             $dto = new ListContratacoesDTO(
-                dataInicial:                 $ciclo->data_inicial,
-                dataFinal:                   $ciclo->data_final,
+                dataInicial: $ciclo->data_inicial,
+                dataFinal: $ciclo->data_final,
                 codigoModalidadeContratacao: (int) $ciclo->modalidade,
-                uf:                          null,
-                codigoMunicipioIbge:         null,
-                cursor:                      null,
-                limit:                       50,
+                uf: null,
+                codigoMunicipioIbge: null,
+                cursor: null,
+                limit: 50,
             );
 
             SyncContratacoesJob::dispatch($dto);
@@ -55,25 +55,5 @@ class SyncContratacoesFaltantesCommand extends Command
         }
 
         return self::SUCCESS;
-    }
-
-    /**
-     * Um job por combinação distinta modalidade + intervalo (o uniqueId do
-     * SyncContratacoesJob colapsa duplicatas do mesmo par).
-     *
-     * @return Collection<int, CicloContratacao>
-     */
-    private function getCiclosIncompletos(): Collection
-    {
-        $retryHours = (int) config('pncp.retry_until_hours.contratacoes', 12);
-
-        return CicloContratacao::query()
-            ->emGap($retryHours)
-            ->select('modalidade', 'data_inicial', 'data_final')
-            ->distinct()
-            ->whereRaw('total_anunciado - itens_processados > 0')
-            ->orderBy('data_inicial')
-            ->orderBy('modalidade')
-            ->get();
     }
 }
