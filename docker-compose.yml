@@ -48,7 +48,7 @@ x-pca-worker: &pca-worker
 
 x-redis: &redis
   image: redis:alpine
-  command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy noeviction --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD precisa estar definida no .env da raiz do projeto (ao lado do docker-compose.yml)}
+  command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy noeviction --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD precisa estar definida no .env da raiz do projeto (ao lado do docker-compose.yml)}
   networks:
     - app-network
   restart: unless-stopped
@@ -163,6 +163,13 @@ services:
   pca-worker:
     <<: *pca-worker
   pca-worker-2:
+    <<: *pca-worker
+  # Cada página leva ~9-13 s de latência no PNCP e o limitador libera 1 req/2 s:
+  # são necessárias ~5-6 requisições em voo para saturar o limitador. Com 2
+  # workers só havia 2 (~0,2 req/s, menos da metade do teto).
+  pca-worker-3:
+    <<: *pca-worker
+  pca-worker-4:
     <<: *pca-worker
 
 networks:

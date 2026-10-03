@@ -7,8 +7,10 @@
 #
 # Orçamento de memória (limites):
 #   postgres 14G | php 2G | worker 3×1G | redis-contratacoes 768M
-#   pca-worker 2×1G | redis-pca 768M | nginx + 2 schedulers ~0.75G
-#   ≈ 23G, deixando ~1G para o sistema operacional.
+#   pca-worker 4×1G | redis-pca 768M | nginx + 2 schedulers ~0.75G
+#   ≈ 25G de TETO somado (acima dos 24G de propósito). São limites, não
+#   reservas: o uso real é pequeno (cada worker ~50 MB, postgres ~1,5 GB em
+#   repouso), então o sistema operacional segue com folga.
 #
 # Os tetos de CPU somam mais que 8 de propósito: são limites, não reservas.
 # Assim cada serviço aproveita a capacidade ociosa sem que um sozinho
@@ -76,6 +78,12 @@ services:
           memory: 256M
 
   pca-worker-2:
+    <<: *pca-worker-resources
+
+  pca-worker-3:
+    <<: *pca-worker-resources
+
+  pca-worker-4:
     <<: *pca-worker-resources
 
   postgres:
