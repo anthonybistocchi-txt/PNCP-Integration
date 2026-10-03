@@ -51,7 +51,7 @@ Route::middleware('auth.api')->group(function ()
 
         Route::prefix('pca')->group(function ()
         {
-            Route::match(['QUERY', 'GET'], '/items', [ListPcaItemsController::class, 'list'])->middleware('throttle:60,1');
+            Route::match(['QUERY'], '/items', [ListPcaItemsController::class, 'list'])->middleware('throttle:60,1');
         });
 
         Route::prefix('orgaos')->group(function ()
