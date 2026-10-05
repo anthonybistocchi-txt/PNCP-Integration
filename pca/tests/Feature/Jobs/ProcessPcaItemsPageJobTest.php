@@ -12,6 +12,8 @@ use App\Models\Pca\PncpPcaCiclo;
 use App\Repositories\Pca\PcaPlanRepository;
 use App\Repositories\Pca\PncpPcaCicloRepository;
 use App\Support\ErrorHandling\PncpFailureHandler;
+use Illuminate\Contracts\Queue\Job as QueueJob;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 use Mockery;
 use Tests\TestCase;
@@ -157,6 +159,92 @@ class ProcessPcaItemsPageJobTest extends TestCase
 
         // Processados < anunciado: sem marca d'água, o plano segue pendente.
         $this->assertNull($plan->refresh()->itens_sincronizados_em);
+    }
+
+    public function test_a_permanent_failure_counts_the_page_only_once()
+    {
+        [, $syncId, $tracker] = $this->startCycle(totalPages: 3, totalItems: 3);
+
+        $client = Mockery::mock(PncpClient::class);
+        $client->shouldReceive('getPcaItens')->once()->andThrow(new \RuntimeException('erro permanente'));
+
+        $page = new ProcessPcaItemsPageJob('12345678000199', 2026, 1, 1, 1, $syncId);
+
+        // Em produção a política chama $job->fail(), que por sua vez dispara o
+        // failed() da página. Antes, o catch contava a mesma página de novo.
+        $queueJob = Mockery::mock(QueueJob::class)->shouldIgnoreMissing();
+        $queueJob->shouldReceive('fail')->once()->andReturnUsing(fn ($e) => $page->failed($e));
+        $page->setJob($queueJob);
+
+        $page->handle(
+            $client,
+            $this->app->make(PncpCircuitBreaker::class),
+            $this->app->make(PncpFailureHandler::class),
+            $tracker,
+            $this->app->make(SyncPcaItemsAction::class),
+            $this->app->make(PcaPlanRepository::class),
+            $this->app->make(PncpPcaCicloRepository::class),
+        );
+
+        $this->assertSame(1, (int) Cache::get("pncp_sync:{$syncId}:done"));
+        $this->assertDatabaseHas('ciclos_pca', ['sync_id' => $syncId, 'status' => 'started']);
+    }
+
+    public function test_a_permanent_failure_on_a_single_page_cycle_still_closes_it_as_a_gap()
+    {
+        [$plan, $syncId, $tracker] = $this->startCycle(totalPages: 1, totalItems: 5);
+
+        $client = Mockery::mock(PncpClient::class);
+        $client->shouldReceive('getPcaItens')->once()->andThrow(new \RuntimeException('erro permanente'));
+
+        $page = new ProcessPcaItemsPageJob('12345678000199', 2026, 1, 1, 5, $syncId);
+
+        $queueJob = Mockery::mock(QueueJob::class)->shouldIgnoreMissing();
+        $queueJob->shouldReceive('fail')->once()->andReturnUsing(fn ($e) => $page->failed($e));
+        $page->setJob($queueJob);
+
+        $page->handle(
+            $client,
+            $this->app->make(PncpCircuitBreaker::class),
+            $this->app->make(PncpFailureHandler::class),
+            $tracker,
+            $this->app->make(SyncPcaItemsAction::class),
+            $this->app->make(PcaPlanRepository::class),
+            $this->app->make(PncpPcaCicloRepository::class),
+        );
+
+        // Fechou com processados < anunciado: gap, sem marca d'água.
+        $this->assertDatabaseHas('ciclos_pca', [
+            'sync_id'           => $syncId,
+            'status'            => 'finished',
+            'itens_processados' => 0,
+            'total_anunciado'   => 5,
+        ]);
+        $this->assertNull($plan->refresh()->itens_sincronizados_em);
+    }
+
+    public function test_reprocessing_a_counted_page_does_not_advance_the_cycle()
+    {
+        [, $syncId, $tracker] = $this->startCycle(totalPages: 2, totalItems: 2);
+
+        foreach ([1, 1] as $pagina)
+        {
+            $client = Mockery::mock(PncpClient::class);
+            $client->shouldReceive('getPcaItens')->once()->andReturn([$this->item(1)]);
+
+            (new ProcessPcaItemsPageJob('12345678000199', 2026, 1, $pagina, 1, $syncId))->handle(
+                $client,
+                $this->app->make(PncpCircuitBreaker::class),
+                $this->app->make(PncpFailureHandler::class),
+                $tracker,
+                $this->app->make(SyncPcaItemsAction::class),
+                $this->app->make(PcaPlanRepository::class),
+                $this->app->make(PncpPcaCicloRepository::class),
+            );
+        }
+
+        $this->assertSame(1, (int) Cache::get("pncp_sync:{$syncId}:done"));
+        $this->assertDatabaseHas('ciclos_pca', ['sync_id' => $syncId, 'status' => 'started']);
     }
 
     /**

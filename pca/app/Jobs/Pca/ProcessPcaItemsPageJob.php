@@ -140,14 +140,19 @@ class ProcessPcaItemsPageJob implements ShouldQueue
                 return;
             }
 
-            // Falha permanente: conta a página no ciclo com 0 itens.
+            // Falha permanente: conta a página no ciclo com 0 itens. Quando a
+            // política já chamou $job->fail(), o failed() acima também conta
+            // esta página; a contagem é idempotente por página (ver
+            // PncpSyncCycleTracker::markPageDone), então não duplica.
             $this->markCyclePageDone($cycleTracker, $ciclos, $planos, 0);
         }
     }
 
     /**
      * Incrementa o contador do ciclo. markPageDone devolve o resumo só na
-     * última unidade — não existe isFinished() no tracker.
+     * última unidade — não existe isFinished() no tracker. A página é a chave
+     * de idempotência: cada uma conta uma única vez, qualquer que seja o
+     * caminho que a encerre.
      *
      * @return array{units_completed: int, items_processed: int, total_records: int}|null
      */
@@ -157,7 +162,7 @@ class ProcessPcaItemsPageJob implements ShouldQueue
         PcaPlanRepository $planos,
         int $itemsProcessed
     ): ?array {
-        $summary = $cycleTracker->markPageDone($this->syncId, $itemsProcessed);
+        $summary = $cycleTracker->markPageDone($this->syncId, $itemsProcessed, (string) $this->pagina);
 
         if ($summary === null)
         {

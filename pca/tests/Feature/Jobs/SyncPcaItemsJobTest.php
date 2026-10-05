@@ -13,6 +13,7 @@ use App\Repositories\Pca\PncpPcaCicloRepository;
 use App\Support\ErrorHandling\PncpFailureHandler;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\Cache;
 use Mockery;
 use Tests\TestCase;
 
@@ -144,6 +145,122 @@ class SyncPcaItemsJobTest extends TestCase
         ]);
     }
 
+    public function test_a_404_on_the_quantity_is_not_mistaken_for_an_empty_plan()
+    {
+        Bus::fake();
+
+        $plan = PcaPlan::create([
+            'cnpj_orgao'     => '12345678000199',
+            'ano_pca'        => 2026,
+            'sequencial_pca' => 1,
+        ]);
+
+        // null = 404; 0 seria "plano existente sem itens".
+        $client = Mockery::mock(PncpClient::class);
+        $client->shouldReceive('getPcaItensQuantidade')->once()->andReturn(null);
+
+        $this->runHandle(new SyncPcaItemsJob('12345678000199', 2026, 1), $client);
+
+        Bus::assertNotDispatched(ProcessPcaItemsPageJob::class);
+        $this->assertDatabaseCount('ciclos_pca', 0);
+        // Sem marca d'água: o plano segue pendente e o faltantes tenta de novo.
+        $this->assertNull($plan->refresh()->itens_sincronizados_em);
+    }
+
+    public function test_failed_finds_the_cycle_through_the_payload_sync_id()
+    {
+        Bus::fake();
+        config(['pncp.pca.page_size' => 50]);
+
+        $client = Mockery::mock(PncpClient::class);
+        $client->shouldReceive('getPcaItensQuantidade')->once()->andReturn(120);
+
+        $job = new SyncPcaItemsJob('12345678000199', 2026, 1);
+        $this->runHandle($job, $client);
+
+        $this->assertDatabaseHas('ciclos_pca', ['sequencial_pca' => 1, 'status' => 'started']);
+
+        // O worker chama failed() numa instância desserializada, que nunca
+        // viu o que o handle() atribuiu.
+        unserialize(serialize($job))->failed(new \RuntimeException('prazo vencido'));
+
+        $this->assertDatabaseCount('ciclos_pca', 1);
+        $this->assertDatabaseHas('ciclos_pca', ['sequencial_pca' => 1, 'status' => 'abandoned']);
+    }
+
+    public function test_failed_before_the_cycle_exists_records_one_abandoned_cycle()
+    {
+        $job = new SyncPcaItemsJob('12345678000199', 2026, 1);
+
+        unserialize(serialize($job))->failed(new \RuntimeException('API fora do ar'));
+
+        $this->assertDatabaseCount('ciclos_pca', 1);
+        $this->assertDatabaseHas('ciclos_pca', [
+            'cnpj_orgao'     => '12345678000199',
+            'sequencial_pca' => 1,
+            'status'         => 'abandoned',
+        ]);
+    }
+
+    public function test_a_retry_resumes_the_same_cycle_without_measuring_again()
+    {
+        Bus::fake();
+        config(['pncp.pca.page_size' => 50]);
+
+        $client = Mockery::mock(PncpClient::class);
+        $client->shouldReceive('getPcaItensQuantidade')->once()->andReturn(120);
+
+        $job = new SyncPcaItemsJob('12345678000199', 2026, 1);
+        $this->runHandle($job, $client);
+
+        // Nova tentativa do mesmo job (ex.: o despacho das páginas falhou no meio).
+        $retryClient = Mockery::mock(PncpClient::class);
+        $retryClient->shouldNotReceive('getPcaItensQuantidade');
+        $this->runHandle(unserialize(serialize($job)), $retryClient);
+
+        $this->assertDatabaseCount('ciclos_pca', 1);
+        // Páginas reenfileiradas: duplicar uma página é inofensivo (upsert + contagem única).
+        Bus::assertDispatchedTimes(ProcessPcaItemsPageJob::class, 6);
+    }
+
+    public function test_a_retry_does_not_reset_the_progress_of_pages_already_done()
+    {
+        Bus::fake();
+        config(['pncp.pca.page_size' => 50]);
+
+        $client = Mockery::mock(PncpClient::class);
+        $client->shouldReceive('getPcaItensQuantidade')->once()->andReturn(120);
+
+        $job = new SyncPcaItemsJob('12345678000199', 2026, 1);
+        $this->runHandle($job, $client);
+
+        $syncId  = (fn () => $this->syncId)->call($job);
+        $tracker = $this->app->make(PncpSyncCycleTracker::class);
+        $tracker->markPageDone($syncId, 50, '1');
+
+        $this->runHandle(unserialize(serialize($job)), Mockery::mock(PncpClient::class));
+
+        $this->assertSame(1, (int) Cache::get("pncp_sync:{$syncId}:done"));
+    }
+
+    public function test_a_job_serialized_before_the_constructor_id_still_gets_its_own_cycle()
+    {
+        Bus::fake();
+        config(['pncp.pca.page_size' => 50]);
+
+        $client = Mockery::mock(PncpClient::class);
+        $client->shouldReceive('getPcaItensQuantidade')->once()->andReturn(60);
+
+        // Payload antigo: o job chegava da fila com syncId vazio.
+        $job = new SyncPcaItemsJob('12345678000199', 2026, 1);
+        (function () { $this->syncId = ''; })->call($job);
+
+        $this->runHandle($job, $client);
+
+        $this->assertDatabaseMissing('ciclos_pca', ['sync_id' => '']);
+        $this->assertDatabaseHas('ciclos_pca', ['sequencial_pca' => 1, 'status' => 'started']);
+    }
+
     public function test_empty_plan_gets_watermark_so_it_is_not_pending_forever()
     {
         Bus::fake();
@@ -169,5 +286,17 @@ class SyncPcaItemsJobTest extends TestCase
         $plan->refresh();
         $this->assertNotNull($plan->itens_sincronizados_em);
         $this->assertSame(0, $plan->itens_total_sincronizado);
+    }
+
+    private function runHandle(SyncPcaItemsJob $job, PncpClient $client): void
+    {
+        $job->handle(
+            $client,
+            $this->app->make(PncpCircuitBreaker::class),
+            $this->app->make(PncpFailureHandler::class),
+            $this->app->make(PncpSyncCycleTracker::class),
+            $this->app->make(PcaPlanRepository::class),
+            $this->app->make(PncpPcaCicloRepository::class),
+        );
     }
 }

@@ -30,11 +30,19 @@ class SyncPcaDataJob implements ShouldQueue, ShouldBeUnique
 
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    protected string $syncId = '';
+    /**
+     * Gerado no construtor para viajar no payload: o failed() roda numa
+     * instância desserializada e precisa achar o ciclo de órgão que o handle()
+     * abriu. Uma nova tentativa reaproveita o mesmo ciclo (idempotente por
+     * sync_id) em vez de deixar um `started` órfão por tentativa.
+     */
+    protected string $syncId;
 
     public function __construct(
         protected PcaSyncParamsDTO $dto
-    ) {}
+    ) {
+        $this->syncId = (string) Str::uuid();
+    }
 
     public function uniqueId(): string
     {
@@ -67,6 +75,13 @@ class SyncPcaDataJob implements ShouldQueue, ShouldBeUnique
 
         Log::withContext(['job_id' => $this->job ? $this->job->getJobId() : 'master-pca']);
 
+        // Jobs serializados antes de o id passar a ser gerado no construtor
+        // chegam com `''`; sem isso todos dividiriam o mesmo sync_id.
+        if ($this->syncId === '')
+        {
+            $this->syncId = (string) Str::uuid();
+        }
+
         $startedAt = now();
 
         if ($failureHandler->shouldWait($this, 'Job Mestre PCA', PncpCircuitBreaker::SCOPE_PCA))
@@ -95,7 +110,6 @@ class SyncPcaDataJob implements ShouldQueue, ShouldBeUnique
                 return;
             }
 
-            $this->syncId = (string) Str::uuid();
             $ciclos->createOrgaoStarted($this->syncId, $this->dto->cnpj, $this->dto->ano, $startedAt);
 
             $plans = [];

@@ -37,9 +37,7 @@ class PncpSyncCycleTracker
      */
     public function start(string $syncId, int $totalUnits, int $totalRecords = 0): void
     {
-        $ttl = now()->addHours(
-            (int) config('pncp.retry_until_hours.pca', 72) + self::TTL_MARGIN_HOURS
-        );
+        $ttl = $this->ttl();
 
         Cache::put($this->doneKey($syncId), 0, $ttl);
         Cache::put($this->totalKey($syncId), $totalUnits, $ttl);
@@ -48,17 +46,41 @@ class PncpSyncCycleTracker
     }
 
     /**
+     * O ciclo já tem contadores? Usado para retomar um ciclo sem zerar o
+     * progresso das páginas que já terminaram.
+     */
+    public function isStarted(string $syncId): bool
+    {
+        return Cache::has($this->totalKey($syncId));
+    }
+
+    /**
      * Marca uma unidade (página/lote) como encerrada e acumula itens processados.
      * Não deve ser chamado em release/retry.
+     *
+     * Com `$unitKey` a contagem é idempotente: a mesma unidade só entra uma vez
+     * no ciclo, não importa por quantos caminhos ela seja encerrada (sucesso,
+     * `fail()` explícito seguido de `failed()`, reentrega do job). Sem isso, uma
+     * página de falha permanente era contada duas vezes e o ciclo fechava com
+     * páginas ainda por fazer.
+     *
+     * Quando a unidade já tinha sido contada e o ciclo está completo, o resumo
+     * é devolvido de novo: quem o recebeu antes pode ter falhado ao gravá-lo
+     * (a escrita do fechamento é idempotente).
      *
      * @return array{units_completed: int, items_processed: int, total_records: int}|null
      *         Resumo do ciclo quando a última unidade termina; null caso contrário.
      */
-    public function markPageDone(string $syncId, int $itemsProcessed = 0): ?array
+    public function markPageDone(string $syncId, int $itemsProcessed = 0, ?string $unitKey = null): ?array
     {
         if ($syncId === '')
         {
             return null;
+        }
+
+        if ($unitKey !== null && ! Cache::add($this->unitKey($syncId, $unitKey), 1, $this->ttl()))
+        {
+            return $this->summaryIfComplete($syncId);
         }
 
         if ($itemsProcessed > 0)
@@ -71,14 +93,45 @@ class PncpSyncCycleTracker
 
         if ($total > 0 && $done === $total)
         {
-            return [
-                'units_completed' => $done,
-                'items_processed' => (int) Cache::get($this->itemsKey($syncId), 0),
-                'total_records'   => (int) Cache::get($this->recordsKey($syncId), 0),
-            ];
+            return $this->summary($syncId, $done);
         }
 
         return null;
+    }
+
+    /**
+     * @return array{units_completed: int, items_processed: int, total_records: int}|null
+     */
+    private function summaryIfComplete(string $syncId): ?array
+    {
+        $done  = (int) Cache::get($this->doneKey($syncId), 0);
+        $total = (int) Cache::get($this->totalKey($syncId), 0);
+
+        return $total > 0 && $done >= $total ? $this->summary($syncId, $done) : null;
+    }
+
+    /**
+     * @return array{units_completed: int, items_processed: int, total_records: int}
+     */
+    private function summary(string $syncId, int $done): array
+    {
+        return [
+            'units_completed' => $done,
+            'items_processed' => (int) Cache::get($this->itemsKey($syncId), 0),
+            'total_records'   => (int) Cache::get($this->recordsKey($syncId), 0),
+        ];
+    }
+
+    private function ttl(): \DateTimeInterface
+    {
+        return now()->addHours(
+            (int) config('pncp.retry_until_hours.pca', 72) + self::TTL_MARGIN_HOURS
+        );
+    }
+
+    private function unitKey(string $syncId, string $unitKey): string
+    {
+        return "pncp_sync:{$syncId}:unit:{$unitKey}";
     }
 
     /**

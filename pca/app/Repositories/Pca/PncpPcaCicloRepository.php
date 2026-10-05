@@ -9,33 +9,46 @@ use Illuminate\Support\Str;
 
 class PncpPcaCicloRepository
 {
+    /**
+     * Os criadores abaixo são idempotentes por `sync_id`: o job gera o id no
+     * construtor (ele viaja no payload), então uma nova tentativa do mesmo job
+     * reaproveita o ciclo em vez de deixar um `started` órfão para trás.
+     */
     public function createOrgaoStarted(string $syncId, string $cnpj, int $ano, DateTimeInterface $startedAt): void
     {
-        PncpPcaCiclo::query()->create([
-            'sync_id'    => $syncId,
-            'cnpj_orgao' => $cnpj,
-            'ano_pca'    => $ano,
-            'status'     => PncpPcaCiclo::STATUS_STARTED,
-            'started_at' => $startedAt,
-        ]);
+        PncpPcaCiclo::query()->updateOrCreate(
+            ['sync_id' => $syncId],
+            [
+                'cnpj_orgao'  => $cnpj,
+                'ano_pca'     => $ano,
+                'status'      => PncpPcaCiclo::STATUS_STARTED,
+                'started_at'  => $startedAt,
+                'finished_at' => null,
+            ]
+        );
     }
 
     /**
-     * Plano sem itens: ciclo já fechado. O sync_id é só para a unique.
+     * Plano sem itens: ciclo já fechado.
      */
-    public function createPlanEmpty(string $cnpj, int $ano, int $sequencial, DateTimeInterface $startedAt): void
-    {
-        $now = now();
-
-        PncpPcaCiclo::query()->create([
-            'sync_id'        => (string) Str::uuid(),
-            'cnpj_orgao'     => $cnpj,
-            'ano_pca'        => $ano,
-            'sequencial_pca' => $sequencial,
-            'status'         => PncpPcaCiclo::STATUS_EMPTY,
-            'started_at'     => $startedAt,
-            'finished_at'    => $now,
-        ]);
+    public function createPlanEmpty(
+        string $cnpj,
+        int $ano,
+        int $sequencial,
+        DateTimeInterface $startedAt,
+        ?string $syncId = null
+    ): void {
+        PncpPcaCiclo::query()->updateOrCreate(
+            ['sync_id' => $syncId ?? (string) Str::uuid()],
+            [
+                'cnpj_orgao'     => $cnpj,
+                'ano_pca'        => $ano,
+                'sequencial_pca' => $sequencial,
+                'status'         => PncpPcaCiclo::STATUS_EMPTY,
+                'started_at'     => $startedAt,
+                'finished_at'    => now(),
+            ]
+        );
     }
 
     public function createPlanStarted(
@@ -47,35 +60,40 @@ class PncpPcaCicloRepository
         int $totalPaginas,
         DateTimeInterface $startedAt
     ): void {
-        PncpPcaCiclo::query()->create([
-            'sync_id'         => $syncId,
-            'cnpj_orgao'      => $cnpj,
-            'ano_pca'         => $ano,
-            'sequencial_pca'  => $sequencial,
-            'total_anunciado' => $totalAnunciado,
-            'total_paginas'   => $totalPaginas,
-            'status'          => PncpPcaCiclo::STATUS_STARTED,
-            'started_at'      => $startedAt,
-        ]);
+        PncpPcaCiclo::query()->updateOrCreate(
+            ['sync_id' => $syncId],
+            [
+                'cnpj_orgao'      => $cnpj,
+                'ano_pca'         => $ano,
+                'sequencial_pca'  => $sequencial,
+                'total_anunciado' => $totalAnunciado,
+                'total_paginas'   => $totalPaginas,
+                'status'          => PncpPcaCiclo::STATUS_STARTED,
+                'started_at'      => $startedAt,
+                'finished_at'     => null,
+            ]
+        );
     }
 
     /**
      * O ciclo de plano nem chegou a medir a quantidade (ex.: API fora do ar
      * durante todo o retryUntil). Registra abandoned para o gap ficar visível.
      */
-    public function createPlanAbandoned(string $cnpj, int $ano, int $sequencial): void
+    public function createPlanAbandoned(string $cnpj, int $ano, int $sequencial, ?string $syncId = null): void
     {
         $now = now();
 
-        PncpPcaCiclo::query()->create([
-            'sync_id'        => (string) Str::uuid(),
-            'cnpj_orgao'     => $cnpj,
-            'ano_pca'        => $ano,
-            'sequencial_pca' => $sequencial,
-            'status'         => PncpPcaCiclo::STATUS_ABANDONED,
-            'started_at'     => $now,
-            'finished_at'    => $now,
-        ]);
+        PncpPcaCiclo::query()->updateOrCreate(
+            ['sync_id' => $syncId ?? (string) Str::uuid()],
+            [
+                'cnpj_orgao'     => $cnpj,
+                'ano_pca'        => $ano,
+                'sequencial_pca' => $sequencial,
+                'status'         => PncpPcaCiclo::STATUS_ABANDONED,
+                'started_at'     => $now,
+                'finished_at'    => $now,
+            ]
+        );
     }
 
     public function findBySyncId(string $syncId): ?PncpPcaCiclo

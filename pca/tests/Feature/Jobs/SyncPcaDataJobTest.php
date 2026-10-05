@@ -129,6 +129,56 @@ class SyncPcaDataJobTest extends TestCase
         $this->assertSame([1], $this->dispatchedSequencials());
     }
 
+    public function test_a_retry_reuses_the_organ_cycle_instead_of_leaving_an_orphan()
+    {
+        Bus::fake();
+        Orgao::create(['cnpj' => self::CNPJ, 'ativo' => true]);
+
+        $job = new SyncPcaDataJob(new PcaSyncParamsDTO(ano: 2026, cnpj: self::CNPJ));
+        $unidades = [$this->unidade(1, now()->subDays(3))];
+
+        $this->handleMaster($job, $unidades);
+        // Nova tentativa: o worker desserializa o mesmo payload.
+        $this->handleMaster(unserialize(serialize($job)), $unidades);
+
+        $this->assertSame(1, PncpPcaCiclo::whereNull('sequencial_pca')->count());
+        $this->assertSame('finished', PncpPcaCiclo::whereNull('sequencial_pca')->first()->status);
+    }
+
+    public function test_failed_abandons_the_organ_cycle_found_through_the_payload()
+    {
+        $job    = new SyncPcaDataJob(new PcaSyncParamsDTO(ano: 2026, cnpj: self::CNPJ));
+        $syncId = (fn () => $this->syncId)->call($job);
+
+        PncpPcaCiclo::create([
+            'sync_id'    => $syncId,
+            'cnpj_orgao' => self::CNPJ,
+            'ano_pca'    => 2026,
+            'status'     => 'started',
+            'started_at' => now()->subHour(),
+        ]);
+
+        // O worker chama failed() numa instância desserializada.
+        unserialize(serialize($job))->failed(new \RuntimeException('prazo vencido'));
+
+        $this->assertDatabaseHas('ciclos_pca', ['sync_id' => $syncId, 'status' => 'abandoned']);
+    }
+
+    public function test_a_job_serialized_before_the_constructor_id_still_gets_its_own_cycle()
+    {
+        Bus::fake();
+        Orgao::create(['cnpj' => self::CNPJ, 'ativo' => true]);
+
+        // Payload antigo: o job chegava da fila com syncId vazio.
+        $job = new SyncPcaDataJob(new PcaSyncParamsDTO(ano: 2026, cnpj: self::CNPJ));
+        (function () { $this->syncId = ''; })->call($job);
+
+        $this->handleMaster($job, [$this->unidade(1, now()->subDays(3))]);
+
+        $this->assertDatabaseMissing('ciclos_pca', ['sync_id' => '']);
+        $this->assertSame(1, PncpPcaCiclo::whereNull('sequencial_pca')->count());
+    }
+
     public function test_unique_for_follows_the_retry_window()
     {
         config(['pncp.retry_until_hours.pca' => 72]);
@@ -140,10 +190,15 @@ class SyncPcaDataJobTest extends TestCase
 
     private function runMaster(array $unidades): void
     {
+        $this->handleMaster(new SyncPcaDataJob(new PcaSyncParamsDTO(ano: 2026, cnpj: self::CNPJ)), $unidades);
+    }
+
+    private function handleMaster(SyncPcaDataJob $job, array $unidades): void
+    {
         $client = Mockery::mock(PncpClient::class);
         $client->shouldReceive('getPcaUnidades')->once()->andReturn($unidades);
 
-        (new SyncPcaDataJob(new PcaSyncParamsDTO(ano: 2026, cnpj: self::CNPJ)))->handle(
+        $job->handle(
             $client,
             $this->app->make(PncpCircuitBreaker::class),
             $this->app->make(PncpFailureHandler::class),

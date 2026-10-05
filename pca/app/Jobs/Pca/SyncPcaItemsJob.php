@@ -5,6 +5,7 @@ namespace App\Jobs\Pca;
 use App\Integrations\PNCP\PncpCircuitBreaker;
 use App\Integrations\PNCP\PncpClient;
 use App\Integrations\PNCP\PncpSyncCycleTracker;
+use App\Models\Pca\PncpPcaCiclo;
 use App\Repositories\Pca\PcaPlanRepository;
 use App\Repositories\Pca\PncpPcaCicloRepository;
 use App\Support\ErrorHandling\PncpFailureHandler;
@@ -25,13 +26,21 @@ class SyncPcaItemsJob implements ShouldQueue, ShouldBeUnique
 
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    protected string $syncId = '';
+    /**
+     * Gerado no construtor para viajar no payload: o failed() roda numa
+     * instância desserializada, que nunca viu o que o handle() atribuiu. Com o
+     * id gerado só no handle(), um job que morria por prazo não achava o
+     * próprio ciclo para abandonar e deixava um `started` órfão.
+     */
+    protected string $syncId;
 
     public function __construct(
         protected string $cnpj,
         protected int $ano,
         protected int $sequencial
-    ) {}
+    ) {
+        $this->syncId = (string) Str::uuid();
+    }
 
     /**
      * Um sub-mestre por plano. Sem isso, o sync-pca e o sync-pca-faltantes
@@ -67,6 +76,13 @@ class SyncPcaItemsJob implements ShouldQueue, ShouldBeUnique
     ): void {
         Log::withContext(['job_id' => $this->job ? $this->job->getJobId() : 'sub-master-pca']);
 
+        // Jobs serializados antes de o id passar a ser gerado no construtor
+        // chegam com `''`; sem isso todos dividiriam o mesmo sync_id.
+        if ($this->syncId === '')
+        {
+            $this->syncId = (string) Str::uuid();
+        }
+
         $startedAt = now();
 
         if ($failureHandler->shouldWait($this, 'Job Sub-Mestre PCA', PncpCircuitBreaker::SCOPE_PCA))
@@ -80,13 +96,48 @@ class SyncPcaItemsJob implements ShouldQueue, ShouldBeUnique
 
         try
         {
+            // Nova tentativa de um job que já tinha aberto o ciclo (a falha foi
+            // ao despachar as páginas): retoma o mesmo ciclo, sem remedir e sem
+            // zerar o progresso das páginas que já terminaram. Despachar de novo
+            // uma página já feita é inofensivo: o upsert é idempotente e o
+            // tracker conta cada página uma só vez.
+            $existente = $ciclos->findBySyncId($this->syncId);
+
+            if ($existente !== null && $existente->status === PncpPcaCiclo::STATUS_STARTED && $existente->total_paginas > 0)
+            {
+                if (! $cycleTracker->isStarted($this->syncId))
+                {
+                    $cycleTracker->start($this->syncId, $existente->total_paginas, $existente->total_anunciado);
+                }
+
+                $this->dispatchPages($existente->total_paginas, $tamanhoPagina);
+
+                return;
+            }
+
             $totalRecords = $client->getPcaItensQuantidade($this->cnpj, $this->ano, $this->sequencial);
 
             $circuitBreaker->recordSuccess(PncpCircuitBreaker::SCOPE_PCA);
 
+            if ($totalRecords === null)
+            {
+                // 404: o plano consta na listagem do órgão, então não existir
+                // aqui é anomalia do PNCP, não "plano sem itens" (que responde
+                // 200 com 0). Sem ciclo e sem marca d'água: o plano continua
+                // pendente e o sync-pca-faltantes tenta de novo, em vez de
+                // esconder os itens por até `refresh_after_days`.
+                Log::warning('PNCP_PCA_ITENS_QUANTIDADE_NOT_FOUND', [
+                    'cnpj'       => $this->cnpj,
+                    'ano'        => $this->ano,
+                    'sequencial' => $this->sequencial,
+                ]);
+
+                return;
+            }
+
             if ($totalRecords <= 0)
             {
-                $ciclos->createPlanEmpty($this->cnpj, $this->ano, $this->sequencial, $startedAt);
+                $ciclos->createPlanEmpty($this->cnpj, $this->ano, $this->sequencial, $startedAt, $this->syncId);
 
                 // Plano sem itens também está "em dia": sem a marca ele seria
                 // pendente para sempre e reconsultado a cada rodada.
@@ -96,7 +147,6 @@ class SyncPcaItemsJob implements ShouldQueue, ShouldBeUnique
             }
 
             $totalPaginas = (int) ceil($totalRecords / $tamanhoPagina);
-            $this->syncId = (string) Str::uuid();
 
             $cycleTracker->start($this->syncId, $totalPaginas, $totalRecords);
             $ciclos->createPlanStarted(
@@ -109,18 +159,7 @@ class SyncPcaItemsJob implements ShouldQueue, ShouldBeUnique
                 $startedAt
             );
 
-            for ($pagina = 1; $pagina <= $totalPaginas; $pagina++)
-            {
-                ProcessPcaItemsPageJob::dispatch(
-                    $this->cnpj,
-                    $this->ano,
-                    $this->sequencial,
-                    $pagina,
-                    $tamanhoPagina,
-                    $this->syncId
-                );
-            }
-
+            $this->dispatchPages($totalPaginas, $tamanhoPagina);
         }
         catch (\Throwable $error)
         {
@@ -131,13 +170,27 @@ class SyncPcaItemsJob implements ShouldQueue, ShouldBeUnique
         }
     }
 
+    private function dispatchPages(int $totalPaginas, int $tamanhoPagina): void
+    {
+        for ($pagina = 1; $pagina <= $totalPaginas; $pagina++)
+        {
+            ProcessPcaItemsPageJob::dispatch(
+                $this->cnpj,
+                $this->ano,
+                $this->sequencial,
+                $pagina,
+                $tamanhoPagina,
+                $this->syncId
+            );
+        }
+    }
+
     public function failed(\Throwable $exception): void
     {
-        // Falhou antes de medir a quantidade (ex.: API fora do ar durante todo
-        // o retryUntil): o ciclo de plano nem chegou a ser criado. Registra um
-        // registro abandonado para o gap ficar visível em ciclos_pca.
         $ciclos = app(PncpPcaCicloRepository::class);
 
+        // Job antigo (serializado antes do id no construtor): não há ciclo a
+        // localizar, só o registro do gap.
         if ($this->syncId === '')
         {
             $ciclos->createPlanAbandoned($this->cnpj, $this->ano, $this->sequencial);
@@ -145,6 +198,15 @@ class SyncPcaItemsJob implements ShouldQueue, ShouldBeUnique
             return;
         }
 
+        // Ciclo aberto e não concluído: abandona.
         $ciclos->abandonIfStarted($this->syncId);
+
+        // Falhou antes de medir a quantidade (ex.: API fora do ar durante todo
+        // o retryUntil): o ciclo de plano nem chegou a ser criado. Registra um
+        // registro abandonado para o gap ficar visível em ciclos_pca.
+        if ($ciclos->findBySyncId($this->syncId) === null)
+        {
+            $ciclos->createPlanAbandoned($this->cnpj, $this->ano, $this->sequencial, $this->syncId);
+        }
     }
 }
