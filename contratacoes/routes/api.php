@@ -56,6 +56,7 @@ Route::middleware('auth.api')->group(function ()
 
         Route::prefix('orgaos')->group(function ()
         {
+            //Route::get('perfil-compras', [GetPerfilComprasController::class, 'get'])->middleware('throttle:60,1');
             Route::match(['QUERY'], '/', [ListOrgaosController::class, 'list'])->middleware('throttle:60,1');
             Route::match(['QUERY'], '/{cnpj}', [GetOrgaoController::class, 'show'])->middleware('throttle:60,1');
         });
