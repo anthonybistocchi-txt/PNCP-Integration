@@ -7,6 +7,7 @@ use App\Exceptions\Infrastructure\PncpRateLimitedException;
 use App\Exceptions\Infrastructure\PncpUnavailableException;
 use Carbon\Carbon;
 use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Redis;
@@ -19,12 +20,22 @@ class PncpClient
      * Busca as unidades de um órgão que possuem PCA no ano especificado.
      * O endpoint pagina (default 10); agregamos todas as páginas aqui.
      *
+     * O PNCP responde 404 tanto para órgão sem PCA (já na página 1) quanto
+     * para uma página além da última (testado em 05/10: 906 unidades com
+     * tamanhoPagina=500 => página 3 devolve 404). Por isso 404 nunca é erro:
+     * encerra a listagem e devolve o que já foi acumulado.
+     *
+     * O tamanho da página vem de `pncp.pca.unidades_page_size`. Com 50, um
+     * órgão de 906 unidades custava 19 requisições dentro do timeout de 300s
+     * do mestre (já houve execução de 283s); com 500 são 2, com conteúdo
+     * idêntico.
+     *
      * @return list<object>
      */
     public function getPcaUnidades(string $cnpj, int $ano): array
     {
         $url = $this->baseUrlOrgaos . "/{$cnpj}/pca/{$ano}/consolidado/unidades";
-        $tamanhoPagina = 50;
+        $tamanhoPagina = max(1, (int) config('pncp.pca.unidades_page_size', 500));
         $pagina = 1;
         $todas = [];
 
@@ -128,8 +139,11 @@ class PncpClient
      *
      * O endpoint de itens não devolve total no payload, então é esta chamada
      * que dimensiona a paginação do sync.
+     *
+     * `null` = 404 (o PNCP não conhece o plano), distinto de `0` (plano
+     * existente sem itens). Quem chama não deve tratar 404 como "plano vazio".
      */
-    public function getPcaItensQuantidade(string $cnpj, int $ano, int $sequencial): int
+    public function getPcaItensQuantidade(string $cnpj, int $ano, int $sequencial): ?int
     {
         $url = $this->baseUrlOrgaos . "/{$cnpj}/pca/{$ano}/{$sequencial}/itens/quantidade";
 
@@ -142,7 +156,7 @@ class PncpClient
 
         if ($response->notFound())
         {
-            return 0;
+            return null;
         }
 
         $this->throwForStatus($response);
@@ -217,6 +231,7 @@ class PncpClient
                 ->retry(
                     (int) config('pncp.http.retries'),
                     (int) config('pncp.http.retry_sleep_ms'),
+                    fn (\Throwable $exception) => $this->shouldRetry($exception),
                     throw: false
                 )
                 ->withHeaders(['Accept' => 'application/json'])
@@ -232,6 +247,27 @@ class PncpClient
                 previous:   $error
             );
         }
+    }
+
+    /**
+     * Sem um critério, o `retry()` do Laravel repete QUALQUER resposta que não
+     * seja 2xx: todo 404 (órgão sem PCA, página além da última) virava duas
+     * requisições e 3s de sleep dentro de uma única vaga do limitador global.
+     * 4xx é determinístico, repetir não muda o resultado.
+     *
+     * Repete falha de conexão/timeout, 5xx e 408 (o PNCP é instável por
+     * requisição) e 429 (comportamento mantido; ver PncpFailureHandler).
+     */
+    private function shouldRetry(\Throwable $exception): bool
+    {
+        if ($exception instanceof RequestException)
+        {
+            $status = $exception->response->status();
+
+            return $status >= 500 || $status === 408 || $status === 429;
+        }
+
+        return true;
     }
 
     /**

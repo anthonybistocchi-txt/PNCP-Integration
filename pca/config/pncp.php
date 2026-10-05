@@ -267,9 +267,15 @@ return [
     | pncp:sync-pca-faltantes (0 = sem teto). Evita que um passivo grande
     | encha a fila de uma vez e vença o prazo de novo.
     |
+    | unidades_page_size — unidades por página de `consolidado/unidades`. O
+    | PNCP aceita 500 com conteúdo idêntico ao de 50 (testado em 05/10 no
+    | órgão de 906 unidades: 2 requisições em vez de 19). O mestre tem
+    | timeout de 300s e já levou 283s listando esse órgão com 50 por página.
+    |
     */
     'pca' => [
         'page_size'             => (int) env('PNCP_PCA_PAGE_SIZE', 500),
+        'unidades_page_size'    => (int) env('PNCP_PCA_UNIDADES_PAGE_SIZE', 500),
         'recheck_empty_days'    => (int) env('PNCP_PCA_RECHECK_EMPTY_DAYS', 30),
         'refresh_after_days'    => (int) env('PNCP_PCA_REFRESH_AFTER_DAYS', 30),
         'faltantes_max_per_run' => (int) env('PNCP_PCA_FALTANTES_MAX_PER_RUN', 2000),
