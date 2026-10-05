@@ -93,6 +93,40 @@ class SyncPcaFaltantesCommandTest extends TestCase
         $this->assertSame([1], $this->dispatchedSequencials());
     }
 
+    public function test_global_pca_update_date_also_makes_a_plan_pending()
+    {
+        Bus::fake();
+
+        $baixadoEm = now()->subDay();
+        $porData   = fn (CarbonInterface $data) => (object) ['dataAtualizacaoGlobalPCA' => $data->format('Y-m-d\TH:i:s')];
+
+        // 1: data da unidade antiga, mas a global do PCA é posterior ao download -> pendente
+        // (o SyncPcaDataJob já decide assim; o faltantes precisa concordar).
+        PcaPlan::create([
+            'cnpj_orgao'             => self::CNPJ,
+            'ano_pca'                => 2026,
+            'sequencial_pca'         => 1,
+            'data_atualizacao'       => $baixadoEm->copy()->subDays(2),
+            'itens_sincronizados_em' => $baixadoEm,
+            'payload_completo'       => $porData($baixadoEm->copy()->addHours(5)),
+        ]);
+        // 2: a global também é anterior ao download -> em dia.
+        PcaPlan::create([
+            'cnpj_orgao'             => self::CNPJ,
+            'ano_pca'                => 2026,
+            'sequencial_pca'         => 2,
+            'data_atualizacao'       => $baixadoEm->copy()->subDays(2),
+            'itens_sincronizados_em' => $baixadoEm,
+            'payload_completo'       => $porData($baixadoEm->copy()->subDay()),
+        ]);
+        // 3: sem payload (planos antigos) -> só vale a data da unidade, em dia.
+        $this->plan(3, syncedAt: $baixadoEm, atualizadoEm: $baixadoEm->copy()->subDay());
+
+        $this->artisan('pncp:sync-pca-faltantes', ['--ano' => 2026])->assertSuccessful();
+
+        $this->assertSame([1], $this->dispatchedSequencials());
+    }
+
     public function test_reports_gap_cycles_without_dispatching_them_blindly()
     {
         Bus::fake();

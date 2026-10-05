@@ -60,6 +60,10 @@ class PcaPlanRepository
      *
      * Com teto por execução, o passivo mais velho não fica para trás.
      *
+     * Traz `data_atualizacao_global` (dataAtualizacaoGlobalPCA, lida do payload
+     * da listagem) além de `data_atualizacao`: o SyncPcaDataJob decide pela mais
+     * recente das duas, e o faltantes precisa usar a mesma regra.
+     *
      * @return LazyCollection<int, PcaPlan>
      */
     public function cursorByAno(int $ano, ?string $cnpj = null): LazyCollection
@@ -70,7 +74,15 @@ class PcaPlanRepository
             ->orderByRaw('itens_sincronizados_em IS NOT NULL')
             ->orderBy('itens_sincronizados_em')
             ->orderBy('id')
-            ->select(['id', 'cnpj_orgao', 'ano_pca', 'sequencial_pca', 'data_atualizacao', 'itens_sincronizados_em'])
+            ->select([
+                'id',
+                'cnpj_orgao',
+                'ano_pca',
+                'sequencial_pca',
+                'data_atualizacao',
+                'itens_sincronizados_em',
+                'payload_completo->dataAtualizacaoGlobalPCA as data_atualizacao_global',
+            ])
             ->cursor();
     }
 }

@@ -56,21 +56,26 @@ final class PcaItemsFreshness
     /**
      * O PNCP devolve `dataAtualizacao` (da unidade) e `dataAtualizacaoGlobalPCA`
      * (do PCA inteiro) sem fuso, em horário de Brasília. Vale a mais recente.
+     *
+     * Aceita string (payload do PNCP) ou data já convertida (coluna do banco),
+     * para o mestre e o sync-pca-faltantes usarem exatamente a mesma regra.
      */
-    public static function latestUpdate(?string ...$dates): ?CarbonInterface
+    public static function latestUpdate(CarbonInterface|string|null ...$dates): ?CarbonInterface
     {
         $latest = null;
 
         foreach ($dates as $raw)
         {
-            if ($raw === null || trim($raw) === '')
+            if ($raw === null || (is_string($raw) && trim($raw) === ''))
             {
                 continue;
             }
 
             try
             {
-                $parsed = Carbon::parse($raw, config('app.timezone'));
+                $parsed = $raw instanceof CarbonInterface
+                    ? $raw
+                    : Carbon::parse($raw, config('app.timezone'));
             }
             catch (\Throwable)
             {

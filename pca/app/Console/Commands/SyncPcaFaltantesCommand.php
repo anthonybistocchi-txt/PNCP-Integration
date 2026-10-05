@@ -68,7 +68,14 @@ class SyncPcaFaltantesCommand extends Command
         {
             $total++;
 
-            if (! PcaItemsFreshness::isPending($plano->itens_sincronizados_em, $plano->data_atualizacao, $refreshDays))
+            // Mesma regra do SyncPcaDataJob: vale a mais recente entre a data da
+            // unidade e a global do PCA.
+            $atualizadoNoPncp = PcaItemsFreshness::latestUpdate(
+                $plano->data_atualizacao,
+                $plano->data_atualizacao_global,
+            );
+
+            if (! PcaItemsFreshness::isPending($plano->itens_sincronizados_em, $atualizadoNoPncp, $refreshDays))
             {
                 $emDia++;
 
@@ -90,7 +97,7 @@ class SyncPcaFaltantesCommand extends Command
                     $plano->cnpj_orgao,
                     $plano->sequencial_pca,
                     $plano->itens_sincronizados_em?->format('Y-m-d H:i') ?? 'nunca',
-                    $plano->data_atualizacao?->format('Y-m-d H:i') ?? '-',
+                    $atualizadoNoPncp?->format('Y-m-d H:i') ?? '-',
                 ];
             }
 
