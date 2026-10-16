@@ -25,7 +25,7 @@ Focado em ingestão em volume. Há dois domínios: **contratações** e **PCA**.
 
 #### Contratações
 
-1. O scheduler de `contratacoes` dispara `pncp:sync-contratacoes` todos os dias às **00:45**.
+1. O scheduler de `contratacoes` dispara `pncp:sync-contratacoes` todos os dias às **00:45**, cobrindo de ontem até hoje (`--days=1`).
 2. O comando enfileira um `SyncContratacoesJob` por modalidade (1–10 por padrão).
 3. O mestre consulta o PNCP só para descobrir o total de páginas e faz fan-out de `ProcessContratacaoPageJob` (50 itens por página).
 4. Cada operário faz upsert em massa via `SyncContratacaoAction`.
@@ -54,17 +54,20 @@ Ao terminar as contratações de uma modalidade, o sistema dispara `SyncDocument
 
 #### PCA — Órgãos, unidades e sync
 
-Pipeline diário:
+1. **12:00, todo dia** — `pncp:import-orgaos`: allowlist em `orgaos` a partir dos CNPJs distintos de `contratacoes`. Zero HTTP. Preenche `razao_social`, `poder` e `esfera` de `payload_completo->orgaoEntidade` (letras: poder `E|L|J|M`, esfera `F|E|M`). Registros `importado_de = manual` não são sobrescritos; `ativo` também não.
+2. **domingo 12:10** — `pncp:discover-unidades`: inventário opcional de unidades em `unidades_orgao`, só de órgãos que já têm plano. O sync de PCA **não** depende dessa tabela.
+3. **segunda e quinta, 00:00** — `pncp:sync-pca`: lista os planos no PNCP e baixa os itens pendentes. Órgão verificado como sem PCA há menos de `PNCP_PCA_RECHECK_EMPTY_DAYS` (30) não é consultado de novo. O mestre (`SyncPcaDataJob`) chama `consolidado/unidades`, grava `planos_pca` e encerra o ciclo de órgão. Cada plano pendente segue em `SyncPcaItemsJob` → `ProcessPcaItemsPageJob` (500 itens por página) para `itens_pca`. A auditoria fica em `ciclos_pca`.
+4. **06:00, todo dia** — `pncp:sync-pca-faltantes`: redespacha só `SyncPcaItemsJob` dos planos já gravados cuja marca de itens está pendente. Não relista órgão e não chama `consolidado/unidades`. Teto de `PNCP_PCA_FALTANTES_MAX_PER_RUN` (2000) planos por execução.
 
-1. **18:00** — `pncp:import-orgaos`: allowlist em `orgaos` a partir dos CNPJs distintos de `contratacoes`. Zero HTTP. Preenche `razao_social`, `poder` e `esfera` de `payload_completo->orgaoEntidade` (letras: poder `E|L|J|M`, esfera `F|E|M`). Registros `importado_de = manual` não são sobrescritos; `ativo` também não.
-2. **20:00** — `pncp:discover-unidades`: inventário opcional de unidades em `unidades_orgao`. O sync de PCA **não** depende dessa tabela.
-3. **12:30** — `pncp:sync-pca`: para cada órgão ativo, despacha `SyncPcaDataJob` → `SyncPcaItemsJob` → `ProcessPcaItemsPageJob`. Persiste em `planos_pca` / `itens_pca` e audita em `ciclos_pca`.
+A marca fica em `planos_pca.itens_sincronizados_em` e só é gravada quando o ciclo do plano fecha completo. Plano pendente: nunca baixado por completo, atualizado no PNCP depois da marca, ou com a marca mais velha que `PNCP_PCA_REFRESH_AFTER_DAYS` (30). “Sem PCA” é outra marca, no órgão (`pca_tem_plano = false`, data em `pca_verificado_em`): a listagem de segunda e quinta pula esse CNPJ por 30 dias. Os itens já gravados continuam sujeitos à marca do plano.
 
 ```bash
 docker compose exec pca-scheduler php artisan pncp:import-orgaos
 docker compose exec pca-scheduler php artisan pncp:import-orgaos --dry-run
 docker compose exec pca-scheduler php artisan pncp:sync-pca
 docker compose exec pca-scheduler php artisan pncp:sync-pca --ano=2026 --cnpj=00394429000100
+docker compose exec pca-scheduler php artisan pncp:sync-pca-faltantes
+docker compose exec pca-scheduler php artisan pncp:sync-pca-faltantes --dry-run
 docker compose exec pca-scheduler php artisan pncp:discover-unidades
 docker compose exec pca-scheduler php artisan pncp:discover-unidades --ano=2026 --force
 ```
@@ -82,7 +85,7 @@ Unique: `(cnpj_orgao, ano_pca, codigo_unidade)`. FK para `orgaos.cnpj`.
 
 #### Resiliência
 
-- **Retry por tempo**: jobs usam `retryUntil` — **12h** contratações (`PNCP_RETRY_UNTIL_HOURS_CONTRATACOES`), **12h** PCA (`PNCP_RETRY_UNTIL_HOURS_PCA`), **2h** documentos (`PNCP_RETRY_UNTIL_HOURS_DOCUMENTOS`).
+- **Retry por tempo**: jobs usam `retryUntil` — **12h** contratações (`PNCP_RETRY_UNTIL_HOURS_CONTRATACOES`), **72h** PCA (`PNCP_RETRY_UNTIL_HOURS_PCA`), **2h** documentos (`PNCP_RETRY_UNTIL_HOURS_DOCUMENTOS`). O valor do PCA fica em `pca/config/pncp.php`.
 - **Progresso parcial** nos lotes de documentos.
 - **Throttle por serviço**: intervalo mínimo entre requisições ao PNCP (`PNCP_MIN_INTERVAL_SECONDS`) no Redis daquele serviço. Os dois podem chamar o PNCP ao mesmo tempo.
 - **Circuit breaker** (Redis do próprio serviço): escopos `contratacoes`, `documentos` e `pca`.
@@ -109,12 +112,13 @@ Copie e preencha:
 
 ### 2. Subir os containers
 
+Na raiz do repositório, ao lado de `docker-compose.yml`:
+
 ```bash
-cd ..   # raiz do projeto (ao lado de docker-compose.yml)
 docker compose up -d
 ```
 
-Sobe: nginx (porta 8000), php, postgres (`pncp`), `redis-contratacoes` (6379), `redis-pca` (6380), scheduler e 3 workers de contratações, `pca-scheduler` e 2 workers de PCA.
+Sobe: nginx (porta 8000), php, postgres (`pncp`), `redis-contratacoes` (6379), `redis-pca` (6380), scheduler e 3 workers de contratações, `pca-scheduler` e 4 workers de PCA.
 
 Produção (limites de CPU/RAM):
 
@@ -139,6 +143,7 @@ docker compose exec php php artisan pncp:sync-contratacoes --days=30 --modalidad
 docker compose exec php php artisan pncp:sync-documentos-pendentes
 docker compose exec pca-scheduler php artisan pncp:import-orgaos
 docker compose exec pca-scheduler php artisan pncp:sync-pca
+docker compose exec pca-scheduler php artisan pncp:sync-pca-faltantes
 ```
 
 Não é necessário subir `queue:work` à mão: os workers já sobem com o compose.
@@ -146,12 +151,14 @@ Não é necessário subir `queue:work` à mão: os workers já sobem com o compo
 ### Agendamento
 
 | Horário | Comando | Função | Serviço |
-| diário 00:45 | `pncp:sync-contratacoes` | Contratações do dia + disparo dos documentos do ciclo | `contratacoes` |
-| `*/20` | `pncp:sync-documentos-pendentes` | Drenagem contínua de documentos | `contratacoes` |
-| sáb/dom 02:00 | `pncp:sync-contratacoes-faltantes` | Reprocessa ciclos incompletos | `contratacoes` |
-| diário 18:00 | `pncp:import-orgaos` | Atualiza allowlist de órgãos | `pca` |
-| diário 20:00 | `pncp:discover-unidades` | Inventário de unidades | `pca` |
-| diário 12:30 | `pncp:sync-pca` | Sincroniza PCA dos órgãos ativos | `pca` |
+|---------|---------|--------|---------|
+| diário 00:45 | `pncp:sync-contratacoes` | Contratações de ontem e de hoje, e disparo dos documentos do ciclo | `contratacoes` |
+| a cada 20 min | `pncp:sync-documentos-pendentes` | Drenagem contínua de documentos com marca nula | `contratacoes` |
+| sáb/dom 02:00 | `pncp:sync-contratacoes-faltantes` | Reprocessa ciclos incompletos de contratações | `contratacoes` |
+| diário 12:00 | `pncp:import-orgaos` | Atualiza allowlist de órgãos | `pca` |
+| domingo 12:10 | `pncp:discover-unidades` | Inventário de unidades dos órgãos que já têm plano | `pca` |
+| seg/qui 00:00 | `pncp:sync-pca` | Lista planos no PNCP e baixa itens pendentes | `pca` |
+| diário 06:00 | `pncp:sync-pca-faltantes` | Rebaixa itens de planos já conhecidos que ficaram pendentes | `pca` |
 
 ## Endpoints da API
 
