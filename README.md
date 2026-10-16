@@ -1,141 +1,160 @@
 # PNCP Integration
 
-API de consulta de contratações públicas e de itens de PCA (Plano de Contratações Anual), com sincronização assíncrona da API do Portal Nacional de Contratações Públicas (PNCP).
+API de consulta de contratações públicas e de itens de PCA (Plano de Contratações Anual). O frontend lê o Postgres local. A API do PNCP só é chamada pelos workers, em segundo plano.
 
-Dois serviços Laravel, um Postgres (`pncp`) e um Redis por serviço. A API HTTP fica em `contratacoes`. O sync de órgãos, unidades e PCA fica em `pca`, com fila e workers próprios.
+Dois serviços Laravel, um banco `pncp` e um Redis por serviço.
 
-## Arquitetura
+| | `contratacoes` | `pca` |
+|---|---|---|
+| O que faz | Licitações, documentos e a API HTTP | Órgãos, unidades, planos e itens de PCA |
+| Fila | `redis-contratacoes` · porta 6379 | `redis-pca` · porta 6380 |
+| Quem processa | scheduler + 3 workers | `pca-scheduler` + 4 workers |
+| Entra na API | sim, nginx na porta 8000 | não; só grava no mesmo Postgres |
 
-Dois fluxos isolados:
+## Neste arquivo
 
-### 1. Fluxo de Leitura (síncrono / frontend)
+- [Leitura](#leitura)
+- [Sincronização](#sincronização)
+- [O que volta sozinho](#o-que-volta-sozinho)
+- [Agenda](#agenda)
+- [Como rodar](#como-rodar)
+- [API](#api)
+- [Códigos do PNCP](#códigos-do-pncp)
 
-Focado em latência baixa.
+## Leitura
 
-- O frontend lê apenas o PostgreSQL local (fonte de verdade).
-- Rotas autenticadas usam o middleware `auth.api` (header `API_KEY` ou Bearer token do usuário).
-- Validação via FormRequest → DTO → Service → Repository.
-- A leitura **nunca** chama a API do governo.
+O frontend lê só o PostgreSQL. A request não chama o governo.
 
-### 2. Fluxo de Sincronização (assíncrono / background)
+`Accept: application/json` e, nas rotas fechadas, `API_KEY` ou `Authorization: Bearer`. O caminho interno é FormRequest, DTO, Service, Repository.
 
-Focado em ingestão em volume. Há dois domínios: **contratações** e **PCA**.
+## Sincronização
 
----
+### Contratações
 
-#### Contratações
+Todo dia às **00:45**, `pncp:sync-contratacoes` cobre de ontem até hoje (`--days=1`).
 
-1. O scheduler de `contratacoes` dispara `pncp:sync-contratacoes` todos os dias às **00:45**, cobrindo de ontem até hoje (`--days=1`).
-2. O comando enfileira um `SyncContratacoesJob` por modalidade (1–10 por padrão).
-3. O mestre consulta o PNCP só para descobrir o total de páginas e faz fan-out de `ProcessContratacaoPageJob` (50 itens por página).
-4. Cada operário faz upsert em massa via `SyncContratacaoAction`.
-5. Cada ciclo grava uma linha em `ciclos_contratacao` (anunciado no START, processado no FINISH). Gaps incompletos aparecem em `pncp:sync-contratacoes-faltantes`.
+1. Um `SyncContratacoesJob` por modalidade (1 a 10).
+2. O mestre só descobre o total de páginas.
+3. `ProcessContratacaoPageJob` faz upsert de 50 registros por página (`SyncContratacaoAction`).
+4. Cada ciclo vira uma linha em `ciclos_contratacao`: o total anunciado no início, o processado no fim.
 
-**Repescagem semanal de gaps:** sábado e domingo às **02:00**, `pncp:sync-contratacoes-faltantes` reprocessa só ciclos incompletos em `ciclos_contratacao` (dispara `SyncContratacoesJob` por intervalo/modalidade).
+Quando a modalidade termina, `SyncDocumentosJob` busca `/arquivos` dos registros daquele ciclo (`documentos_sincronizados_em` nulo e `updated_at` a partir do início) e distribui `ProcessDocumentoPageJob`.
 
-Backfill manual de um intervalo específico (ainda disponível via `--days` / datas absolutas):
+A drenagem `pncp:sync-documentos-pendentes` roda **a cada 20 minutos** e é o caminho principal dos documentos: qualquer licitação com a marca nula, de qualquer data, com teto por modalidade e por janela. O dimensionamento está em `contratacoes/config/pncp.php`.
+
+Sábado e domingo às **02:00**, `pncp:sync-contratacoes-faltantes` reabre só os ciclos incompletos.
+
+> [!NOTE]
+> Gap de contratação: `abandoned`, `finished` com `itens_processados` menor que `total_anunciado`, ou `started` além de 12h. Contar `INSERT` não serve: o upsert atualiza linha que já existe.
 
 ```bash
 docker compose exec php php artisan pncp:sync-contratacoes --data-inicial=20260914 --data-final=20260915 --modalidades=4,6,8,9
 docker compose exec php php artisan pncp:sync-contratacoes-faltantes
 ```
 
-Critério de gap: `abandoned`, `finished` com `itens_processados < total_anunciado`, ou `started` além de `PNCP_RETRY_UNTIL_HOURS_CONTRATACOES` (12h). Não usar contagem de `INSERT` — o upsert atualiza registros já existentes.
+### PCA
 
-#### Contratações — Fase 2 (Documentos)
+| Quando | Comando | O que faz |
+|---|---|---|
+| todo dia 12:00 | `pncp:import-orgaos` | Allowlist em `orgaos` a partir dos CNPJs de `contratacoes`. Zero HTTP. Preenche `razao_social`, `poder` e `esfera`. Manual (`importado_de = manual`) e `ativo` não são sobrescritos. |
+| domingo 12:10 | `pncp:discover-unidades` | Inventário opcional em `unidades_orgao`, só de órgão que já tem plano. O sync de itens não usa essa tabela. |
+| segunda e quinta 00:00 | `pncp:sync-pca` | Lista planos no PNCP e baixa itens pendentes. |
+| todo dia 06:00 | `pncp:sync-pca-faltantes` | Rebaixa itens de planos **já gravados**. Não relista órgão. Teto de 2000 planos por execução. |
 
-Ao terminar as contratações de uma modalidade, o sistema dispara `SyncDocumentosJob`, que busca arquivos (`/arquivos`) dos registros que o ciclo tocou (`documentos_sincronizados_em IS NULL` e `updated_at >= início do ciclo`) e distribui lotes em `ProcessDocumentoPageJob`.
+Na listagem, `SyncPcaDataJob` chama `consolidado/unidades`, grava `planos_pca` e fecha o ciclo do órgão. Cada plano pendente segue `SyncPcaItemsJob` → `ProcessPcaItemsPageJob` (500 itens por página) até `itens_pca`. A auditoria fica em `ciclos_pca`.
 
-#### Contratações — Drenagem de pendentes
-
-`pncp:sync-documentos-pendentes` roda **a cada 20 minutos** e busca registros com `documentos_sincronizados_em` nulo de qualquer data (teto por modalidade e por janela). É o caminho principal dos documentos. Detalhes do dimensionamento em `contratacoes/config/pncp.php`.
-
----
-
-#### PCA — Órgãos, unidades e sync
-
-1. **12:00, todo dia** — `pncp:import-orgaos`: allowlist em `orgaos` a partir dos CNPJs distintos de `contratacoes`. Zero HTTP. Preenche `razao_social`, `poder` e `esfera` de `payload_completo->orgaoEntidade` (letras: poder `E|L|J|M`, esfera `F|E|M`). Registros `importado_de = manual` não são sobrescritos; `ativo` também não.
-2. **domingo 12:10** — `pncp:discover-unidades`: inventário opcional de unidades em `unidades_orgao`, só de órgãos que já têm plano. O sync de PCA **não** depende dessa tabela.
-3. **segunda e quinta, 00:00** — `pncp:sync-pca`: lista os planos no PNCP e baixa os itens pendentes. Órgão verificado como sem PCA há menos de `PNCP_PCA_RECHECK_EMPTY_DAYS` (30) não é consultado de novo. O mestre (`SyncPcaDataJob`) chama `consolidado/unidades`, grava `planos_pca` e encerra o ciclo de órgão. Cada plano pendente segue em `SyncPcaItemsJob` → `ProcessPcaItemsPageJob` (500 itens por página) para `itens_pca`. A auditoria fica em `ciclos_pca`.
-4. **06:00, todo dia** — `pncp:sync-pca-faltantes`: redespacha só `SyncPcaItemsJob` dos planos já gravados cuja marca de itens está pendente. Não relista órgão e não chama `consolidado/unidades`. Teto de `PNCP_PCA_FALTANTES_MAX_PER_RUN` (2000) planos por execução.
-
-A marca fica em `planos_pca.itens_sincronizados_em` e só é gravada quando o ciclo do plano fecha completo. Plano pendente: nunca baixado por completo, atualizado no PNCP depois da marca, ou com a marca mais velha que `PNCP_PCA_REFRESH_AFTER_DAYS` (30). “Sem PCA” é outra marca, no órgão (`pca_tem_plano = false`, data em `pca_verificado_em`): a listagem de segunda e quinta pula esse CNPJ por 30 dias. Os itens já gravados continuam sujeitos à marca do plano.
+> [!IMPORTANT]
+> Há dois prazos de 30 dias, e eles não se misturam.
+>
+> | | Marca dos itens | Órgão sem PCA |
+> |---|---|---|
+> | Onde | `planos_pca.itens_sincronizados_em` | `orgaos.pca_tem_plano = false` e `pca_verificado_em` |
+> | Quando nasce | o ciclo do plano fecha completo | a listagem rodou e o PNCP devolveu vazio |
+> | O que acontece ao vencer | a respescagem das 06:00 baixa os itens de novo | segunda e quinta voltam a consultar esse CNPJ |
+> | Variável | `PNCP_PCA_REFRESH_AFTER_DAYS` (30) | `PNCP_PCA_RECHECK_EMPTY_DAYS` (30) |
+>
+> Plano pendente, para a respescagem: nunca baixado por completo, atualizado no PNCP depois da marca, ou com a marca mais velha que 30 dias. Um órgão marcado sem PCA continua com os itens já gravados sujeitos à marca do plano. Plano novo nesse CNPJ espera os 30 dias da listagem.
 
 ```bash
 docker compose exec pca-scheduler php artisan pncp:import-orgaos
 docker compose exec pca-scheduler php artisan pncp:import-orgaos --dry-run
-docker compose exec pca-scheduler php artisan pncp:sync-pca
 docker compose exec pca-scheduler php artisan pncp:sync-pca --ano=2026 --cnpj=00394429000100
-docker compose exec pca-scheduler php artisan pncp:sync-pca-faltantes
 docker compose exec pca-scheduler php artisan pncp:sync-pca-faltantes --dry-run
-docker compose exec pca-scheduler php artisan pncp:discover-unidades
 docker compose exec pca-scheduler php artisan pncp:discover-unidades --ano=2026 --force
 ```
 
-##### De onde vêm os campos de `unidades_orgao`
+Campos de `unidades_orgao`. Unique `(cnpj_orgao, ano_pca, codigo_unidade)`, com FK para `orgaos.cnpj`.
 
 | Campo | Origem |
-|-------|--------|
-| `codigo_unidade`, `nome_unidade`, `poder`, `esfera`, `ano_pca` | API `GET .../pca/{ano}/consolidado/unidades` (paginada) |
-| `uf_sigla`, `codigo_ibge`, `nome_municipio` | **Enriquecimento local** de `contratacoes.payload_completo->unidadeOrgao` (mesmo CNPJ + `codigoUnidade`). A API de unidades **não** envia geo. Se a unidade nunca apareceu numa contratação, ficam `null`. |
+|---|---|
+| `codigo_unidade`, `nome_unidade`, `poder`, `esfera`, `ano_pca` | `GET .../pca/{ano}/consolidado/unidades` |
+| `uf_sigla`, `codigo_ibge`, `nome_municipio` | Enriquecimento local de `contratacoes.payload_completo->unidadeOrgao` (mesmo CNPJ + `codigoUnidade`). A API de unidades não envia geo; se a unidade nunca apareceu numa contratação, ficam nulos. |
 
-Unique: `(cnpj_orgao, ano_pca, codigo_unidade)`. FK para `orgaos.cnpj`.
+### Resiliência
 
----
+| Escopo | `retryUntil` | Variável |
+|---|---|---|
+| Contratações | 12h | `PNCP_RETRY_UNTIL_HOURS_CONTRATACOES` |
+| PCA | 72h | `PNCP_RETRY_UNTIL_HOURS_PCA` em `pca/config/pncp.php` |
+| Documentos | 2h | `PNCP_RETRY_UNTIL_HOURS_DOCUMENTOS` |
 
-#### Resiliência
+Cada serviço tem o próprio Redis para fila, cache, unique jobs, intervalo mínimo (`PNCP_MIN_INTERVAL_SECONDS`) e circuit breaker (`contratacoes`, `documentos`, `pca`). Os dois podem chamar o PNCP ao mesmo tempo. Lotes de documentos guardam progresso parcial. Logs: `PNCP_CONTRATACOES_*`, `PNCP_DOCUMENTOS_*`, `PNCP_PCA_*`, `PNCP_UNIDADES_*`, `PNCP_BREAKER_*`.
 
-- **Retry por tempo**: jobs usam `retryUntil` — **12h** contratações (`PNCP_RETRY_UNTIL_HOURS_CONTRATACOES`), **72h** PCA (`PNCP_RETRY_UNTIL_HOURS_PCA`), **2h** documentos (`PNCP_RETRY_UNTIL_HOURS_DOCUMENTOS`). O valor do PCA fica em `pca/config/pncp.php`.
-- **Progresso parcial** nos lotes de documentos.
-- **Throttle por serviço**: intervalo mínimo entre requisições ao PNCP (`PNCP_MIN_INTERVAL_SECONDS`) no Redis daquele serviço. Os dois podem chamar o PNCP ao mesmo tempo.
-- **Circuit breaker** (Redis do próprio serviço): escopos `contratacoes`, `documentos` e `pca`.
-- **Logs estruturados**: `PNCP_CONTRATACOES_*`, `PNCP_DOCUMENTOS_*`, `PNCP_PCA_*`, `PNCP_UNIDADES_*`, `PNCP_BREAKER_*` em `storage/logs/laravel.log`.
+## O que volta sozinho
 
-## Stack
+| O que falhou | Quem recupera | Quando |
+|---|---|---|
+| Itens de um plano que já está em `planos_pca` | `pncp:sync-pca-faltantes` | no dia seguinte, 06:00, até 2000 planos. A rede de 30 dias cobre plano cuja data no PNCP não mudou. |
+| Documento com marca nula | `pncp:sync-documentos-pendentes` | a cada 20 minutos, sem filtro de data |
+| Licitação de ontem ou de hoje | `pncp:sync-contratacoes` | na madrugada seguinte, 00:45 |
+| Ciclo de contratação que saiu dessa janela e ficou em gap | `pncp:sync-contratacoes-faltantes` | sábado e domingo, 02:00 |
+| Listagem de órgão que morreu antes de chamar o PNCP | `pncp:sync-pca` | a próxima segunda ou quinta, 00:00. A respescagem diária não relista órgão. |
+| Órgão marcado sem PCA | `pncp:sync-pca` | 30 dias depois de `pca_verificado_em` |
 
-- PHP 8.3+
-- Laravel 13
-- PostgreSQL
-- Redis (um container por serviço: fila, cache, circuit breaker, unique jobs)
-- Docker Compose (nginx, php-fpm, postgres, dois Redis, dois schedulers, workers de cada serviço)
+Um job que foi para `failed_jobs` não volta para a fila. A recuperação é o agendamento da tabela acima.
+
+## Agenda
+
+| Horário | Comando | Serviço |
+|---|---|---|
+| diário 00:45 | `pncp:sync-contratacoes` | `contratacoes` |
+| a cada 20 min | `pncp:sync-documentos-pendentes` | `contratacoes` |
+| sáb/dom 02:00 | `pncp:sync-contratacoes-faltantes` | `contratacoes` |
+| diário 12:00 | `pncp:import-orgaos` | `pca` |
+| domingo 12:10 | `pncp:discover-unidades` | `pca` |
+| seg/qui 00:00 | `pncp:sync-pca` | `pca` |
+| diário 06:00 | `pncp:sync-pca-faltantes` | `pca` |
 
 ## Como rodar
 
-Os arquivos de compose ficam na **raiz do monorepo**.
+PHP 8.3+, Laravel 13, PostgreSQL, Redis e Docker Compose. Os arquivos de compose ficam na raiz do repositório.
 
-### 1. Variáveis de ambiente
+**1. Ambiente.** Copie e preencha `.env` na raiz (senhas do Postgres e do Redis usadas pelo compose) e `contratacoes/.env` e `pca/.env`. `DB_PASSWORD` e `REDIS_PASSWORD` iguais aos da raiz. `DB_DATABASE=pncp`.
 
-Copie e preencha:
-
-- `.env` na raiz do projeto (senhas do Postgres/Redis usadas pelo compose)
-- `contratacoes/.env` e `pca/.env` (`DB_PASSWORD` e `REDIS_PASSWORD` iguais aos da raiz; `DB_DATABASE=pncp`)
-
-### 2. Subir os containers
-
-Na raiz do repositório, ao lado de `docker-compose.yml`:
+**2. Containers.** Na raiz, ao lado de `docker-compose.yml`:
 
 ```bash
 docker compose up -d
 ```
 
-Sobe: nginx (porta 8000), php, postgres (`pncp`), `redis-contratacoes` (6379), `redis-pca` (6380), scheduler e 3 workers de contratações, `pca-scheduler` e 4 workers de PCA.
+Sobe nginx (`8000`), php, postgres (`pncp`), os dois Redis, os dois schedulers, 3 workers de contratações e 4 de PCA. Os workers já sobem com o compose.
 
-Produção (limites de CPU/RAM):
+Produção, com limite de CPU e RAM:
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 ```
 
-### 3. Migrar e seedar
+**3. Migrações.**
 
 ```bash
 docker compose exec php php artisan migrate --seed
 docker compose exec pca-scheduler php artisan migrate --force
 ```
 
-O primeiro comando cria usuários, contratações e a extensão `pg_stat_statements`. O segundo cria órgãos, unidades, planos e itens de PCA no mesmo banco.
+O primeiro cria usuários, contratações e a extensão `pg_stat_statements`. O segundo cria órgãos, unidades, planos e itens no mesmo banco.
 
-### 4. Sync manual (opcional)
+**4. Sync manual**, se quiser disparar fora da agenda:
 
 ```bash
 docker compose exec php php artisan pncp:sync-contratacoes
@@ -146,66 +165,34 @@ docker compose exec pca-scheduler php artisan pncp:sync-pca
 docker compose exec pca-scheduler php artisan pncp:sync-pca-faltantes
 ```
 
-Não é necessário subir `queue:work` à mão: os workers já sobem com o compose.
-
-### Agendamento
-
-| Horário | Comando | Função | Serviço |
-|---------|---------|--------|---------|
-| diário 00:45 | `pncp:sync-contratacoes` | Contratações de ontem e de hoje, e disparo dos documentos do ciclo | `contratacoes` |
-| a cada 20 min | `pncp:sync-documentos-pendentes` | Drenagem contínua de documentos com marca nula | `contratacoes` |
-| sáb/dom 02:00 | `pncp:sync-contratacoes-faltantes` | Reprocessa ciclos incompletos de contratações | `contratacoes` |
-| diário 12:00 | `pncp:import-orgaos` | Atualiza allowlist de órgãos | `pca` |
-| domingo 12:10 | `pncp:discover-unidades` | Inventário de unidades dos órgãos que já têm plano | `pca` |
-| seg/qui 00:00 | `pncp:sync-pca` | Lista planos no PNCP e baixa itens pendentes | `pca` |
-| diário 06:00 | `pncp:sync-pca-faltantes` | Rebaixa itens de planos já conhecidos que ficaram pendentes | `pca` |
-
-## Endpoints da API
+## API
 
 Base: `http://localhost:8000/api`
 
-### Público
+Rotas fechadas: `API_KEY: <chave>` ou `Authorization: Bearer <chave>`, e `Accept: application/json`.
 
-#### `GET /api/healthz`
+| Método | Rota | O que faz |
+|---|---|---|
+| `GET` | `/api/healthz` | Banco e Redis. Sem autenticação. |
+| `GET` | `/api/me` | Usuário autenticado. |
+| `POST` | `/api/auth/register` | Cria usuário. Exige `verify_permission_to_create_user`. |
+| `GET` `POST` | `/api/v1/keywords` | Lista ou cria/atualiza keywords do usuário. |
+| `PUT` `DELETE` | `/api/v1/keywords/{id}` | Atualiza ou remove. |
+| `GET` `POST` | `/api/v1/filters` | Lista ou cria/atualiza filtros do usuário. |
+| `DELETE` | `/api/v1/filters/{id}` | Remove. |
+| `QUERY` | `/api/v1/contratacoes` | Busca licitações no banco local. Filtros no body. |
+| `GET` | `/api/v1/contratacoes/relevant/include` | Relevantes do usuário, modo include. `cursor` e `limit` opcionais. |
+| `GET` | `/api/v1/contratacoes/relevant/both` | Modo both (include e exclude). |
+| `QUERY` `GET` | `/api/v1/pca/items` | Itens de PCA no banco local. Não chama o PNCP. |
 
-Health check (sem autenticação). Retorna status de banco e Redis.
+### `QUERY /api/v1/contratacoes`
 
-### Autenticados
+Obrigatórios: `dataInicial`, `dataFinal`, `codigoModalidadeContratacao`. `limit` máximo 50. Paginação por cursor: mande `next_cursor` em `cursor` até `has_more` ser `false`.
 
-Header: `API_KEY: <chave do usuário>` (ou `Authorization: Bearer <chave>`) e `Accept: application/json`.
+`tipoData`: `publicacao` (padrão) filtra a data do edital; `atualizacao` filtra licitação alterada no intervalo.
 
-#### `GET /api/me`
-
-Dados do usuário autenticado.
-
-#### `POST /api/auth/register`
-
-Criação de usuário (exige permissão no middleware `verify_permission_to_create_user`).
-
-#### Keywords — `/api/v1/keywords`
-
-| Método | Rota | Descrição |
-|--------|------|-----------|
-| GET | `/` | Lista keywords do usuário |
-| POST | `/` | Cria/atualiza |
-| PUT | `/{id}` | Atualiza |
-| DELETE | `/{id}` | Remove |
-
-#### Filters — `/api/v1/filters`
-
-| Método | Rota | Descrição |
-|--------|------|-----------|
-| GET | `/` | Lista filtros do usuário |
-| POST | `/` | Cria/atualiza |
-| DELETE | `/{id}` | Remove |
-
-#### Contratações — `/api/v1/contratacoes`
-
-##### `QUERY /api/v1/contratacoes`
-
-Busca com filtros no body (método HTTP `QUERY`).
-
-**Body (JSON):**
+<details>
+<summary>Exemplo de body e resposta</summary>
 
 ```json
 {
@@ -226,12 +213,6 @@ Busca com filtros no body (método HTTP `QUERY`).
 }
 ```
 
-- Obrigatórios: `dataInicial`, `dataFinal`, `codigoModalidadeContratacao`
-- `limit` máximo: 50
-- Paginação por cursor (keyset)
-
-**Resposta (exemplo):**
-
 ```json
 {
   "data": [
@@ -246,89 +227,43 @@ Busca com filtros no body (método HTTP `QUERY`).
 }
 ```
 
-Envie `next_cursor` em `cursor` na próxima página. Fim quando `has_more` for `false` ou `next_cursor` for `null`.
+</details>
 
-**`tipoData`:**
+### `QUERY` / `GET /api/v1/pca/items`
 
-- `publicacao` (padrão): filtra pela data de publicação do edital
-- `atualizacao`: filtra por licitações que sofreram alteração no intervalo
+Filtros: `ano`, `cnpj`, `categoriaItem`, `uf`, `municipio`, `search`, `cursor`, `limit` (máx. 50).
 
-##### `GET /api/v1/contratacoes/relevant/include`
+Resposta: `{ "data": [...], "next_cursor": "..." }`.
 
-Contratações relevantes ao usuário (modo include), com `cursor` e `limit` opcionais.
+## Códigos do PNCP
 
-##### `GET /api/v1/contratacoes/relevant/both`
+Nas tabelas `orgaos` e `unidades_orgao` as colunas são `poder` e `esfera`. Na API de contratações os parâmetros continuam `poderId` e `esferaId`. Letras, não IDs numéricos.
 
-Idem, modo both (include + exclude).
+| `poder` | Significado | `esfera` | Significado |
+|---|---|---|---|
+| `E` | Executivo | `F` | Federal |
+| `L` | Legislativo | `E` | Estadual |
+| `J` | Judiciário | `M` | Municipal |
+| `M` | Ministério Público | `D` | Distrital (DF) |
+| `N` | Não se aplica | `N` | Não se aplica |
 
-#### PCA — `/api/v1/pca`
+| `situacaoCompraId` | Significado | `modalidadeId` | Significado |
+|---|---|---|---|
+| `1` | Divulgada no PNCP | `1` | Leilão |
+| `2` | Revogada | `2` | Diálogo Competitivo |
+| `3` | Anulada | `3` | Concurso |
+| `4` | Suspensa | `4` | Concorrência |
+| | | `5` | Concurso (específico) / Chamamento Público |
+| | | `6` | Pregão |
+| | | `7` | Dispensa de Licitação |
+| | | `8` | Inexigibilidade |
+| | | `9` | Credenciamento |
+| | | `10` | Pré-qualificação |
 
-##### `QUERY` / `GET /api/v1/pca/items`
-
-Lista itens de PCA do banco local (não chama o PNCP).
-
-**Filtros (query/body):** `ano`, `cnpj`, `categoriaItem`, `uf`, `municipio`, `search`, `cursor`, `limit` (máx. 50).
-
-Paginação por cursor. Resposta: `{ "data": [...], "next_cursor": "..." }`.
-
-## Tabelas de domínio (PNCP)
-
-### `poder` / `poderId` (letra, não ID numérico)
-
-- `E`: Executivo
-- `L`: Legislativo
-- `J`: Judiciário
-- `N`: Não se aplica
-- `M`: Ministério Público (quando aplicável na fonte)
-
-Nas tabelas `orgaos` e `unidades_orgao` a coluna se chama **`poder`**. Na API de filtros de contratações o parâmetro continua `poderId` (legado do payload PNCP).
-
-### `esfera` / `esferaId` (letra, não ID numérico)
-
-- `F`: Federal
-- `E`: Estadual
-- `M`: Municipal
-- `D`: Distrital (DF)
-- `N`: Não se aplica
-
-Nas tabelas `orgaos` e `unidades_orgao` a coluna se chama **`esfera`**.
-
-### `situacaoCompraId`
-
-- `1`: Divulgada no PNCP
-- `2`: Revogada
-- `3`: Anulada
-- `4`: Suspensa
-
-### `modalidadeId` / `codigoModalidadeContratacao`
-
-- `1`: Leilão
-- `2`: Diálogo Competitivo
-- `3`: Concurso
-- `4`: Concorrência
-- `5`: Concurso (específico) / Chamamento Público
-- `6`: Pregão
-- `7`: Dispensa de Licitação
-- `8`: Inexigibilidade
-- `9`: Credenciamento
-- `10`: Pré-qualificação
-
-### `modoDisputaId`
-
-- `1`: Aberto
-- `2`: Fechado
-- `3`: Aberto e Fechado
-- `4`: Fechado e Aberto
-- `5`: Não se aplica
-
-### `tipoInstrumentoConvocatorioCodigo`
-
-- `1`: Edital
-- `2`: Aviso de Contratação Direta
-- `3`: Ato de Inexigibilidade
-- `4`: Ato de Dispensa
-
-### `fontesOrcamentarias`
-
-- `1`: Recursos do Tesouro
-- `2`: Outras Fontes
+| `modoDisputaId` | Significado | `tipoInstrumentoConvocatorioCodigo` | Significado | `fontesOrcamentarias` | Significado |
+|---|---|---|---|---|---|
+| `1` | Aberto | `1` | Edital | `1` | Recursos do Tesouro |
+| `2` | Fechado | `2` | Aviso de Contratação Direta | `2` | Outras Fontes |
+| `3` | Aberto e Fechado | `3` | Ato de Inexigibilidade | | |
+| `4` | Fechado e Aberto | `4` | Ato de Dispensa | | |
+| `5` | Não se aplica | | | | |
