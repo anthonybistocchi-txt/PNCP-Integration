@@ -31,8 +31,12 @@ class SyncPcaItemsJob implements ShouldQueue, ShouldBeUnique
      * instância desserializada, que nunca viu o que o handle() atribuiu. Com o
      * id gerado só no handle(), um job que morria por prazo não achava o
      * próprio ciclo para abandonar e deixava um `started` órfão.
+     *
+     * O default não chega num payload antigo. O __unserialize do Laravel pula
+     * a chave ausente e a propriedade tipada fica não inicializada; lê-la
+     * lança "must not be accessed before initialization".
      */
-    protected string $syncId;
+    protected string $syncId = '';
 
     public function __construct(
         protected string $cnpj,
@@ -76,9 +80,9 @@ class SyncPcaItemsJob implements ShouldQueue, ShouldBeUnique
     ): void {
         Log::withContext(['job_id' => $this->job ? $this->job->getJobId() : 'sub-master-pca']);
 
-        // Jobs serializados antes de o id passar a ser gerado no construtor
-        // chegam com `''`; sem isso todos dividiriam o mesmo sync_id.
-        if ($this->syncId === '')
+        // Payload anterior ao id no construtor: chave ausente (não inicializada)
+        // ou ''. Sem um id próprio, esses jobs dividiriam o mesmo sync_id.
+        if (! isset($this->syncId) || $this->syncId === '')
         {
             $this->syncId = (string) Str::uuid();
         }
@@ -189,9 +193,9 @@ class SyncPcaItemsJob implements ShouldQueue, ShouldBeUnique
     {
         $ciclos = app(PncpPcaCicloRepository::class);
 
-        // Job antigo (serializado antes do id no construtor): não há ciclo a
-        // localizar, só o registro do gap.
-        if ($this->syncId === '')
+        // Job antigo (serializado antes do id no construtor): a propriedade
+        // não veio no payload. Não há ciclo a localizar, só o registro do gap.
+        if (! isset($this->syncId) || $this->syncId === '')
         {
             $ciclos->createPlanAbandoned($this->cnpj, $this->ano, $this->sequencial);
 

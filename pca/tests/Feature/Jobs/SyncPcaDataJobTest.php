@@ -169,9 +169,10 @@ class SyncPcaDataJobTest extends TestCase
         Bus::fake();
         Orgao::create(['cnpj' => self::CNPJ, 'ativo' => true]);
 
-        // Payload antigo: o job chegava da fila com syncId vazio.
-        $job = new SyncPcaDataJob(new PcaSyncParamsDTO(ano: 2026, cnpj: self::CNPJ));
-        (function () { $this->syncId = ''; })->call($job);
+        // Payload anterior ao id no construtor: chave ausente, propriedade não
+        // inicializada. É o Error do log, não um syncId já igual a ''.
+        $job = $this->restoreWithoutSyncId(new SyncPcaDataJob(new PcaSyncParamsDTO(ano: 2026, cnpj: self::CNPJ)));
+        $job->failed(new \RuntimeException('prazo vencido'));
 
         $this->handleMaster($job, [$this->unidade(1, now()->subDays(3))]);
 
@@ -207,6 +208,18 @@ class SyncPcaDataJobTest extends TestCase
             $this->app->make(PcaPlanRepository::class),
             $this->app->make(PncpPcaCicloRepository::class),
         );
+    }
+
+    private function restoreWithoutSyncId(SyncPcaDataJob $job): SyncPcaDataJob
+    {
+        $payload = $job->__serialize();
+        unset($payload["\0*\0syncId"]);
+
+        /** @var SyncPcaDataJob $restored */
+        $restored = (new \ReflectionClass($job))->newInstanceWithoutConstructor();
+        $restored->__unserialize($payload);
+
+        return $restored;
     }
 
     private function unidade(int $sequencial, CarbonInterface $dataAtualizacao): object

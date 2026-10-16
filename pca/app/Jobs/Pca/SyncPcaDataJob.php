@@ -35,8 +35,12 @@ class SyncPcaDataJob implements ShouldQueue, ShouldBeUnique
      * instância desserializada e precisa achar o ciclo de órgão que o handle()
      * abriu. Uma nova tentativa reaproveita o mesmo ciclo (idempotente por
      * sync_id) em vez de deixar um `started` órfão por tentativa.
+     *
+     * O default não chega num payload antigo. O __unserialize do Laravel pula
+     * a chave ausente e a propriedade tipada fica não inicializada; lê-la
+     * lança "must not be accessed before initialization".
      */
-    protected string $syncId;
+    protected string $syncId = '';
 
     public function __construct(
         protected PcaSyncParamsDTO $dto
@@ -75,9 +79,9 @@ class SyncPcaDataJob implements ShouldQueue, ShouldBeUnique
 
         Log::withContext(['job_id' => $this->job ? $this->job->getJobId() : 'master-pca']);
 
-        // Jobs serializados antes de o id passar a ser gerado no construtor
-        // chegam com `''`; sem isso todos dividiriam o mesmo sync_id.
-        if ($this->syncId === '')
+        // Payload anterior ao id no construtor: chave ausente (não inicializada)
+        // ou ''. Sem um id próprio, esses jobs dividiriam o mesmo sync_id.
+        if (! isset($this->syncId) || $this->syncId === '')
         {
             $this->syncId = (string) Str::uuid();
         }
@@ -223,7 +227,8 @@ class SyncPcaDataJob implements ShouldQueue, ShouldBeUnique
             ]);
         }
 
-        if ($this->syncId === '')
+        // Payload anterior ao id no construtor: não há ciclo deste job para abandonar.
+        if (! isset($this->syncId) || $this->syncId === '')
         {
             return;
         }

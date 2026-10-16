@@ -251,9 +251,11 @@ class SyncPcaItemsJobTest extends TestCase
         $client = Mockery::mock(PncpClient::class);
         $client->shouldReceive('getPcaItensQuantidade')->once()->andReturn(60);
 
-        // Payload antigo: o job chegava da fila com syncId vazio.
-        $job = new SyncPcaItemsJob('12345678000199', 2026, 1);
-        (function () { $this->syncId = ''; })->call($job);
+        // Payload anterior ao id no construtor: o __unserialize do Laravel não
+        // traz a chave, e a propriedade tipada fica não inicializada. Atribuir
+        // '' não reproduz o Error do log.
+        $job = $this->restoreWithoutSyncId(new SyncPcaItemsJob('12345678000199', 2026, 1));
+        $job->failed(new \RuntimeException('prazo vencido'));
 
         $this->runHandle($job, $client);
 
@@ -286,6 +288,18 @@ class SyncPcaItemsJobTest extends TestCase
         $plan->refresh();
         $this->assertNotNull($plan->itens_sincronizados_em);
         $this->assertSame(0, $plan->itens_total_sincronizado);
+    }
+
+    private function restoreWithoutSyncId(SyncPcaItemsJob $job): SyncPcaItemsJob
+    {
+        $payload = $job->__serialize();
+        unset($payload["\0*\0syncId"]);
+
+        /** @var SyncPcaItemsJob $restored */
+        $restored = (new \ReflectionClass($job))->newInstanceWithoutConstructor();
+        $restored->__unserialize($payload);
+
+        return $restored;
     }
 
     private function runHandle(SyncPcaItemsJob $job, PncpClient $client): void
