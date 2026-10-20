@@ -1,12 +1,12 @@
 # PNCP Integration
 
-API de consulta de contratações públicas e de itens de PCA (Plano de Contratações Anual). O frontend lê o Postgres local. A API do PNCP só é chamada pelos workers, em segundo plano.
+API de consulta de contratações públicas, de itens de PCA (Plano de Contratações Anual) e de órgãos. O frontend lê o Postgres local. A API do PNCP só é chamada pelos workers, em segundo plano.
 
 Dois serviços Laravel, um banco `pncp` e um Redis por serviço.
 
 | | `contratacoes` | `pca` |
 |---|---|---|
-| O que faz | Licitações, documentos e a API HTTP | Órgãos, unidades, planos e itens de PCA |
+| O que faz | Licitações, documentos e a API HTTP (contratações, itens de PCA e órgãos) | Órgãos, unidades, planos e itens de PCA |
 | Fila | `redis-contratacoes` · porta 6379 | `redis-pca` · porta 6380 |
 | Quem processa | scheduler + 3 workers | `pca-scheduler` + 4 workers |
 | Entra na API | sim, nginx na porta 8000 | não; só grava no mesmo Postgres |
@@ -137,7 +137,7 @@ PHP 8.3+, Laravel 13, PostgreSQL, Redis e Docker Compose. Os arquivos de compose
 docker compose up -d
 ```
 
-Sobe nginx (`8000`), php, postgres (`pncp`), os dois Redis, os dois schedulers, 3 workers de contratações e 4 de PCA. Os workers já sobem com o compose.
+Sobe nginx (`8000`), php, postgres (`pncp`), os dois Redis, os dois schedulers, 3 workers de contratações e 4 de PCA. Os workers já sobem com o compose. Postgres (`5432`) e os dois Redis (`6379` e `6380`) escutam só em `127.0.0.1`.
 
 Produção, com limite de CPU e RAM:
 
@@ -183,7 +183,9 @@ Rotas fechadas: `API_KEY: <chave>` ou `Authorization: Bearer <chave>`, e `Accept
 | `QUERY` | `/api/v1/contratacoes` | Busca licitações no banco local. Filtros no body. |
 | `GET` | `/api/v1/contratacoes/relevant/include` | Relevantes do usuário, modo include. `cursor` e `limit` opcionais. |
 | `GET` | `/api/v1/contratacoes/relevant/both` | Modo both (include e exclude). |
-| `QUERY` `GET` | `/api/v1/pca/items` | Itens de PCA no banco local. Não chama o PNCP. |
+| `QUERY` | `/api/v1/pca/items` | Itens de PCA no banco local. Não chama o PNCP. |
+| `QUERY` | `/api/v1/orgaos` | Órgãos ativos. `cursor` e `limit` opcionais. |
+| `QUERY` | `/api/v1/orgaos/{cnpj}` | Um órgão, com planos e itens de PCA. 404 se o CNPJ não existir. |
 
 ### `QUERY /api/v1/contratacoes`
 
@@ -218,22 +220,39 @@ Obrigatórios: `dataInicial`, `dataFinal`, `codigoModalidadeContratacao`. `limit
   "data": [
     {
       "numeroControle": "12345/2026",
-      "processo": "0001/2026"
+      "processo": "0001/2026",
+      "objetoCompra": "Aquisição de notebooks",
+      "valorTotalEstimado": 150000,
+      "documentos": []
     }
   ],
+  "page": 1,
   "count_page": 15,
+  "count": 15,
   "next_cursor": "eyJkYXRlIjoiMjAyNi0wOC0xNSIsIm51bWVyb19jb250cm9sZSI6Ii4uLiJ9",
   "has_more": true
 }
 ```
 
+Cada item também traz `valorTotalHomologado`, `detalhesDisputa`, `orgaoEntidade`, `unidade`, `datas` e `links`.
+
 </details>
 
-### `QUERY` / `GET /api/v1/pca/items`
+### `QUERY /api/v1/pca/items`
 
-Filtros: `ano`, `cnpj`, `categoriaItem`, `uf`, `municipio`, `search`, `cursor`, `limit` (máx. 50).
+Filtros no body: `ano`, `cnpj`, `categoriaItem`, `search`, `cursor`, `limit` (máx. 50).
 
-Resposta: `{ "data": [...], "next_cursor": "..." }`.
+O envelope é o mesmo das contratações: `data`, `page`, `count_page`, `count`, `next_cursor`, `has_more`.
+
+### `QUERY /api/v1/orgaos`
+
+Lista só órgãos com `ativo = true`, em ordem de CNPJ. Body opcional: `cursor`, `limit` (máx. 50, padrão 15).
+
+Cada item: `cnpj`, `razao_social`, `poder`, `esfera`, `ativo`. O envelope é o mesmo das contratações.
+
+### `QUERY /api/v1/orgaos/{cnpj}`
+
+`cnpj` com 14 dígitos. Resposta: `{ "data": { ...órgão, "planos": [ { ...plano, "itens": [...] } ] } }`. Planos do mais novo para o mais antigo; itens por `numero_item`. CNPJ inexistente devolve 404.
 
 ## Códigos do PNCP
 
