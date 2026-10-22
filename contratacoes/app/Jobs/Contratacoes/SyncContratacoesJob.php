@@ -16,7 +16,6 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Str;
 
 class SyncContratacoesJob implements ShouldQueue, ShouldBeUnique
 {
@@ -37,8 +36,8 @@ class SyncContratacoesJob implements ShouldQueue, ShouldBeUnique
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     /**
-     * sync_id gravado após o START, para o failed() conseguir abandonar o ciclo
-     * se o mestre morrer depois de persistir a linha e antes/durante o despacho.
+     * sync_id da tentativa corrente. failed() não enxerga este valor: o Laravel
+     * reidrata o job pelo payload original. O abandono sem total usa o banco.
      */
     protected string $syncId = '';
 
@@ -48,6 +47,21 @@ class SyncContratacoesJob implements ShouldQueue, ShouldBeUnique
     public function __construct(
         protected ListContratacoesDTO $dto
     ) {}
+
+    /**
+     * Grava o ciclo antes de enfileirar. Se o worker nunca rodar o job, o
+     * reconciliador ainda encontra o intervalo.
+     */
+    public static function dispatchFor(ListContratacoesDTO $dto): void
+    {
+        app(CicloContratacaoRecorder::class)->intend(
+            $dto->codigoModalidadeContratacao,
+            $dto->dataInicial,
+            $dto->dataFinal,
+        );
+
+        self::dispatch($dto);
+    }
 
     /**
      * Unique por modalidade + intervalo. Sem isso, 10 modalidades no mesmo
@@ -92,6 +106,14 @@ class SyncContratacoesJob implements ShouldQueue, ShouldBeUnique
 
         $startedAt = now();
 
+        $ciclo = $cicloRecorder->intend(
+            $this->dto->codigoModalidadeContratacao,
+            $this->dto->dataInicial,
+            $this->dto->dataFinal,
+            $startedAt
+        );
+        $this->syncId = $ciclo->sync_id;
+
         if ($failureHandler->shouldWait($this, 'Job Mestre', PncpCircuitBreaker::SCOPE_CONTRATACOES))
         {
             return;
@@ -123,7 +145,8 @@ class SyncContratacoesJob implements ShouldQueue, ShouldBeUnique
                     $this->dto->codigoModalidadeContratacao,
                     $this->dto->dataInicial,
                     $this->dto->dataFinal,
-                    $startedAt
+                    $startedAt,
+                    $this->syncId
                 );
 
                 Log::info('PNCP_CONTRATACOES_FINISHED', [
@@ -140,7 +163,6 @@ class SyncContratacoesJob implements ShouldQueue, ShouldBeUnique
 
             $totalPaginas  = (int) ($response->totalPaginas ?? 1);
             $totalRecords  = (int) ($response->totalRegistros ?? 0);
-            $this->syncId  = (string) Str::uuid();
 
             $cycleTracker->start($this->syncId, $totalPaginas, $totalRecords);
             $cicloRecorder->start(
@@ -194,19 +216,27 @@ class SyncContratacoesJob implements ShouldQueue, ShouldBeUnique
     }
 
     /**
-     * Mestre descartado (retryUntil). Se o START já tinha sido gravado e o
-     * ciclo não fechou, marca abandoned para ficar queryável em ciclos_contratacao.
+     * Mestre descartado (retryUntil). Abandona o ciclo sem total anunciado
+     * para o reconciliador achar o intervalo. Ciclo que já tem total fica
+     * para as páginas fecharem.
      */
     public function failed(\Throwable $exception): void
     {
-        if ($this->syncId === '')
+        $recorder = app(CicloContratacaoRecorder::class);
+        $reason   = 'SyncContratacoesJob esgotou o retryUntil: ' . $exception->getMessage();
+
+        if ($this->syncId !== '')
         {
+            $recorder->abandon($this->syncId, $reason);
+
             return;
         }
 
-        app(CicloContratacaoRecorder::class)->abandon(
-            $this->syncId,
-            'SyncContratacoesJob esgotou o retryUntil: ' . $exception->getMessage()
+        $recorder->abandonUnprobed(
+            $this->dto->codigoModalidadeContratacao,
+            $this->dto->dataInicial,
+            $this->dto->dataFinal,
+            $reason
         );
     }
 }

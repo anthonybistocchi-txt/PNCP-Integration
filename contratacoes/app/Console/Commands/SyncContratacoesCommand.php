@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\DTOs\Contratacoes\ListContratacoesDTO;
+use App\Integrations\PNCP\ContratacoesCobertura;
 use App\Jobs\Contratacoes\SyncContratacoesJob;
 use Illuminate\Console\Command;
 
@@ -25,7 +26,7 @@ class SyncContratacoesCommand extends Command
 
     private array $todasModalidades = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
-    public function handle(): int
+    public function handle(ContratacoesCobertura $cobertura): int
     {
         $modalidades = $this->resolverModalidades();
 
@@ -35,35 +36,76 @@ class SyncContratacoesCommand extends Command
             return self::FAILURE;
         }
 
-        $intervalo = $this->resolverIntervalo();
+        $enviados = [];
 
-        if ($intervalo === null)
+        if ($this->temDatasAbsolutas() || (int) $this->option('days') !== 1)
         {
-            return self::FAILURE;
+            $intervalo = $this->resolverIntervalo();
+
+            if ($intervalo === null)
+            {
+                return self::FAILURE;
+            }
+
+            [$dataInicial, $dataFinal] = $intervalo;
+
+            $this->info("Sincronizando PNCP de {$dataInicial} até {$dataFinal}. Modalidades: " . implode(', ', $modalidades));
+
+            foreach ($modalidades as $modalidade)
+            {
+                $this->despachar($modalidade, $dataInicial, $dataFinal, $enviados);
+            }
         }
 
-        [$dataInicial, $dataFinal] = $intervalo;
-
-        $this->info("Sincronizando PNCP de {$dataInicial} até {$dataFinal}. Modalidades: " . implode(', ', $modalidades));
-
-        foreach ($modalidades as $modalidade)
+        foreach ($cobertura->intervalosEmAberto($modalidades) as $intervalo)
         {
-            $dto = new ListContratacoesDTO(
-                dataInicial:                 $dataInicial,
-                dataFinal:                   $dataFinal,
-                codigoModalidadeContratacao: $modalidade,
-                uf:                          null,
-                codigoMunicipioIbge:         null,
-                cursor:                      null,
-                limit:                       50,
+            $this->despachar(
+                $intervalo['modalidade'],
+                $intervalo['data_inicial'],
+                $intervalo['data_final'],
+                $enviados
             );
+        }
 
-            SyncContratacoesJob::dispatch($dto);
-
-            $this->info("Job enviado: modalidade {$modalidade}, {$dataInicial} até {$dataFinal}.");
+        if ($enviados === [])
+        {
+            $this->info('Nenhum intervalo de contratação pendente.');
         }
 
         return self::SUCCESS;
+    }
+
+    /**
+     * @param  array<string, true>  $enviados
+     */
+    private function despachar(int $modalidade, string $dataInicial, string $dataFinal, array &$enviados): void
+    {
+        $chave = $modalidade . ':' . $dataInicial . ':' . $dataFinal;
+
+        if (isset($enviados[$chave]))
+        {
+            return;
+        }
+
+        $enviados[$chave] = true;
+
+        SyncContratacoesJob::dispatchFor(new ListContratacoesDTO(
+            dataInicial:                 $dataInicial,
+            dataFinal:                   $dataFinal,
+            codigoModalidadeContratacao: $modalidade,
+            uf:                          null,
+            codigoMunicipioIbge:         null,
+            cursor:                      null,
+            limit:                       50,
+        ));
+
+        $this->info("Job enviado: modalidade {$modalidade}, {$dataInicial} até {$dataFinal}.");
+    }
+
+    private function temDatasAbsolutas(): bool
+    {
+        return trim((string) $this->option('data-inicial')) !== ''
+            || trim((string) $this->option('data-final')) !== '';
     }
 
     /**

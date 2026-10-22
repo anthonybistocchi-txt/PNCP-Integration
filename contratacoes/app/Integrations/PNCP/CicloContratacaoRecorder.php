@@ -15,6 +15,51 @@ use Illuminate\Support\Str;
  */
 class CicloContratacaoRecorder
 {
+    /**
+     * Intenção de sincronizar um intervalo, gravada antes de chamar o PNCP.
+     *
+     * Sem essa linha o reconciliador não vê o gap quando o mestre morre na
+     * fila ou antes de saber o total. Reusa o ciclo ainda sem total para o
+     * retry não abrir outra linha; ciclo que já tem total anunciado fica
+     * intocado.
+     */
+    public function intend(
+        int $modalidade,
+        string $dataInicial,
+        string $dataFinal,
+        ?\DateTimeInterface $startedAt = null
+    ): CicloContratacao
+    {
+        $existing = CicloContratacao::query()
+            ->where('modalidade', $modalidade)
+            ->where('data_inicial', $dataInicial)
+            ->where('data_final', $dataFinal)
+            ->where('status', CicloContratacao::STATUS_STARTED)
+            ->where('total_anunciado', 0)
+            ->where('total_paginas', 0)
+            ->orderByDesc('id')
+            ->first();
+
+        if ($existing !== null)
+        {
+            return $existing;
+        }
+
+        return CicloContratacao::query()->create([
+            'sync_id'           => (string) Str::uuid(),
+            'modalidade'        => $modalidade,
+            'data_inicial'      => $dataInicial,
+            'data_final'        => $dataFinal,
+            'total_anunciado'   => 0,
+            'total_paginas'     => 0,
+            'itens_processados' => 0,
+            'paginas_completas' => 0,
+            'status'            => CicloContratacao::STATUS_STARTED,
+            'started_at'        => $startedAt ?? now(),
+            'finished_at'       => null,
+        ]);
+    }
+
     public function start(
         string $syncId,
         int $modalidade,
@@ -43,17 +88,39 @@ class CicloContratacaoRecorder
     }
 
     /**
-     * Contratacoes sem registros: grava um ciclo já fechado como empty.
-     * Gera sync_id próprio para manter a coluna unique utilizável.
+     * Contratacoes sem registros: fecha o ciclo como empty.
+     * Com sync_id, atualiza a intenção já gravada. Sem ele, cria a linha.
      */
     public function recordEmpty(
         int $modalidade,
         string $dataInicial,
         string $dataFinal,
-        ?\DateTimeInterface $startedAt = null
+        ?\DateTimeInterface $startedAt = null,
+        ?string $syncId = null
     ): CicloContratacao
     {
         $now = now();
+
+        if ($syncId !== null && $syncId !== '')
+        {
+            $updated = CicloContratacao::query()
+                ->where('sync_id', $syncId)
+                ->where('status', CicloContratacao::STATUS_STARTED)
+                ->update([
+                    'total_anunciado'   => 0,
+                    'total_paginas'     => 0,
+                    'itens_processados' => 0,
+                    'paginas_completas' => 0,
+                    'status'            => CicloContratacao::STATUS_EMPTY,
+                    'finished_at'       => $now,
+                    'updated_at'        => $now,
+                ]);
+
+            if ($updated > 0)
+            {
+                return CicloContratacao::query()->where('sync_id', $syncId)->firstOrFail();
+            }
+        }
 
         return CicloContratacao::query()->create([
             'sync_id'           => (string) Str::uuid(),
@@ -131,6 +198,35 @@ class CicloContratacaoRecorder
                 'sync_id' => $syncId,
                 'reason'  => $reason,
             ]);
+        }
+    }
+
+    /**
+     * Abandona ciclos deste intervalo que nunca souberam o total.
+     *
+     * failed() do mestre reidrata o job pelo payload original, então o
+     * sync_id definido no handle não está disponível. Ciclo que já tem total
+     * anunciado não entra aqui: as páginas dele ainda podem fechá-lo.
+     */
+    public function abandonUnprobed(
+        int $modalidade,
+        string $dataInicial,
+        string $dataFinal,
+        ?string $reason = null
+    ): void
+    {
+        $syncIds = CicloContratacao::query()
+            ->where('modalidade', $modalidade)
+            ->where('data_inicial', $dataInicial)
+            ->where('data_final', $dataFinal)
+            ->where('status', CicloContratacao::STATUS_STARTED)
+            ->where('total_anunciado', 0)
+            ->where('total_paginas', 0)
+            ->pluck('sync_id');
+
+        foreach ($syncIds as $syncId)
+        {
+            $this->abandon((string) $syncId, $reason);
         }
     }
 }

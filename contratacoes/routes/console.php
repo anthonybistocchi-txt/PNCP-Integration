@@ -33,11 +33,9 @@ Schedule::command('pncp:sync-contratacoes')->dailyAt('00:45');
 // versão do Laravel (só every{Five,Ten,Fifteen,Thirty}Minutes).
 Schedule::command('pncp:sync-documentos-pendentes')->cron('*/20 * * * *');
 
-// Reprocessa só o que faltou: ciclos em gap em ciclos_contratacao
-// (abandoned / finished abaixo do anunciado / started além do retryUntil).
-// Substitui o antigo backfill cego `pncp:sync --days=7` — não relista a
-// janela inteira, só dispara SyncContratacoesJob nos intervalos incompletos.
-// Sábado e domingo (tráfego baixo), duas chances na semana.
+// Reprocessa o que faltou e o dia que ficou sem linha. No fim de semana
+// também rebusca as janelas dos últimos PNCP_CONTRATACOES_RECHECK_DAYS,
+// mesmo as que fecharam.
 Schedule::command('pncp:sync-contratacoes-faltantes')
     ->days([0, 6]) // domingo (0) e sábado (6)
     ->at('02:00');

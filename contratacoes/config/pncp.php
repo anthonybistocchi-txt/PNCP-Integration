@@ -212,15 +212,10 @@ return [
     | Separado por escopo porque os dois lados têm economias opostas, e o
     | valor único de 6h estava errado para os dois ao mesmo tempo:
     |
-    | CONTRATACOES (12h) — é barata (só ~244 páginas/dia, ~8 min de limitador) e
-    | insubstituível: se uma página morre, aquele pedaço do dia não entra no
-    | banco e nenhum ciclo futuro volta a olhar para ele, então a Fase 2 e a
-    | drenagem nunca sabem que ele existiu. Em 15/09 as páginas das
-    | modalidades 4/6/8/9 morreram às 11:17 e 12:29-12:52, exatamente 6h
-    | depois do início, no meio de pausas de 1h do breaker — a contratacoes nunca
-    | terminou e a Fase 2 dessas modalidades nunca disparou. 12h absorvem o
-    | padrão de 3-4 outages de 1h já observado e ainda morrem bem antes do
-    | ciclo seguinte (00:45 + 12h = 12:45).
+    | CONTRATACOES (12h) — é barata (só ~244 páginas/dia, ~8 min de limitador).
+    | Página que morre fica em gap e volta pelo cron do dia seguinte ou pelo
+    | reconciliador. 12h absorvem o padrão de 3-4 outages de 1h já observado
+    | e ainda morrem bem antes do ciclo seguinte (00:45 + 12h = 12:45).
     |
     | DOCUMENTOS (2h) — é o oposto: cada lote é pequeno e totalmente
     | recuperável, porque os registros continuam com `documentos_sincronizados_em`
@@ -235,6 +230,23 @@ return [
         'pca'           => (int) env('PNCP_RETRY_UNTIL_HOURS_PCA', 12),
         'documentos'    => (int) env('PNCP_RETRY_UNTIL_HOURS_DOCUMENTOS', 2),
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Janela que volta a ser buscada mesmo com ciclo fechado
+    |--------------------------------------------------------------------------
+    |
+    | Dias, contados para trás a partir de hoje. Na primeira execução também
+    | é o piso: dia anterior a isso, sem linha de ciclo, não é descoberto
+    | sozinho. Depois da primeira execução, um buraco de qualquer tamanho
+    | até hoje volta na próxima rodada.
+    |
+    | O reconciliador de fim de semana rebusca essas janelas já fechadas.
+    | Cobre total do PNCP que bate com o gravado e mesmo assim está curto,
+    | e alteração que só aparece de novo no endpoint de atualização.
+    |
+    */
+    'contratacoes_recheck_days' => (int) env('PNCP_CONTRATACOES_RECHECK_DAYS', 7),
 
     /*
     |--------------------------------------------------------------------------

@@ -33,19 +33,19 @@ O frontend lê só o PostgreSQL. A request não chama o governo.
 
 Todo dia às **00:45**, `pncp:sync-contratacoes` cobre de ontem até hoje (`--days=1`).
 
-1. Um `SyncContratacoesJob` por modalidade (1 a 10).
-2. O mestre só descobre o total de páginas.
+1. Um `SyncContratacoesJob` por modalidade (1 a 10). Nesse disparo já nasce a linha em `ciclos_contratacao`, com status `started` e total ainda 0.
+2. O mestre descobre o total de páginas e grava o anunciado nessa mesma linha. Se o PNCP vier vazio, ela fecha como `empty`.
 3. `ProcessContratacaoPageJob` faz upsert de 50 registros por página (`SyncContratacaoAction`).
-4. Cada ciclo vira uma linha em `ciclos_contratacao`: o total anunciado no início, o processado no fim.
+4. No fim, a linha recebe o processado. Se o mestre morrer antes do total, ela continua incompleta e o reconciliador pega o intervalo.
 
 Quando a modalidade termina, `SyncDocumentosJob` busca `/arquivos` dos registros daquele ciclo (`documentos_sincronizados_em` nulo e `updated_at` a partir do início) e distribui `ProcessDocumentoPageJob`.
 
 A drenagem `pncp:sync-documentos-pendentes` roda **a cada 20 minutos** e é o caminho principal dos documentos: qualquer licitação com a marca nula, de qualquer data, com teto por modalidade e por janela. O dimensionamento está em `contratacoes/config/pncp.php`.
 
-Sábado e domingo às **02:00**, `pncp:sync-contratacoes-faltantes` reabre só os ciclos incompletos.
+Sábado e domingo às **02:00**, `pncp:sync-contratacoes-faltantes` reabre os ciclos incompletos, os dias que ficaram sem linha e as janelas dos últimos 7 dias (`PNCP_CONTRATACOES_RECHECK_DAYS`), mesmo as que fecharam. A madrugada também busca o dia que ficou sem ciclo, a partir da primeira execução desta cobertura.
 
 > [!NOTE]
-> Gap de contratação: `abandoned`, `finished` com `itens_processados` menor que `total_anunciado`, ou `started` além de 12h. Contar `INSERT` não serve: o upsert atualiza linha que já existe.
+> Gap de contratação: `abandoned`, `finished` com `itens_processados` menor que `total_anunciado`, `started` além de 12h, ou ciclo que ficou sem total anunciado. Dia sem nenhuma linha volta na próxima madrugada, desde a primeira execução da cobertura. Uma atualização do PNCP posterior à busca de documentos zera `documentos_sincronizados_em` e a drenagem pega de novo. Contar `INSERT` não serve: o upsert atualiza linha que já existe.
 
 ```bash
 docker compose exec php php artisan pncp:sync-contratacoes --data-inicial=20260914 --data-final=20260915 --modalidades=4,6,8,9
@@ -107,8 +107,10 @@ Cada serviço tem o próprio Redis para fila, cache, unique jobs, intervalo mín
 | Itens de um plano que já está em `planos_pca` | `pncp:sync-pca-faltantes` | no dia seguinte, 06:00, até 2000 planos. A rede de 30 dias cobre plano cuja data no PNCP não mudou. |
 | Documento com marca nula | `pncp:sync-documentos-pendentes` | a cada 20 minutos, sem filtro de data |
 | Licitação de ontem ou de hoje | `pncp:sync-contratacoes` | na madrugada seguinte, 00:45 |
-| Ciclo de contratação que saiu dessa janela e ficou em gap | `pncp:sync-contratacoes-faltantes` | sábado e domingo, 02:00 |
-| Listagem de órgão que morreu antes de chamar o PNCP | `pncp:sync-pca` | a próxima segunda ou quinta, 00:00. A respescagem diária não relista órgão. |
+| Dia de contratação que ficou sem linha de ciclo | `pncp:sync-contratacoes` e `pncp:sync-contratacoes-faltantes` | na próxima execução, desde a primeira cobertura. Antes dela, só os últimos `PNCP_CONTRATACOES_RECHECK_DAYS` (7). |
+| Janela de contratação já fechada, para pegar total curto ou alteração | `pncp:sync-contratacoes-faltantes` | sábado e domingo, 02:00, últimos 7 dias |
+| Ciclo de contratação que saiu dessa janela e ficou em gap | `pncp:sync-contratacoes-faltantes` | sábado e domingo, 02:00. Se um ciclo posterior fechou o mesmo intervalo, não rebusca. |
+| Listagem de órgão que morreu antes de terminar | `pncp:sync-pca-faltantes` | no dia seguinte, 06:00. A listagem completa continua segunda e quinta. |
 | Órgão marcado sem PCA | `pncp:sync-pca` | 30 dias depois de `pca_verificado_em` |
 
 Um job que foi para `failed_jobs` não volta para a fila. A recuperação é o agendamento da tabela acima.

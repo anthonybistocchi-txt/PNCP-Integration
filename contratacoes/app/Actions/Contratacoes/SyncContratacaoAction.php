@@ -64,6 +64,16 @@ class SyncContratacaoAction
                     'payload_completo',
                 ]
             );
+
+            // O PNCP atualizou o registro depois que os documentos foram
+            // baixados. A marca volta a nulo e a drenagem busca de novo.
+            // O JSON já gravado fica até a nova busca substituir.
+            Contratacao::query()
+                ->whereIn('numero_controle_pncp', array_column($upsertData, 'numero_controle_pncp'))
+                ->whereNotNull('documentos_sincronizados_em')
+                ->whereNotNull('data_atualizacao_global')
+                ->whereColumn('data_atualizacao_global', '>', 'documentos_sincronizados_em')
+                ->update(['documentos_sincronizados_em' => null]);
         }
         catch (\Throwable $error)
         {

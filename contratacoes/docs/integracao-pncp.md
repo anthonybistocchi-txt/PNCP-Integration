@@ -106,16 +106,19 @@ Parâmetros enviados (`array_filter` remove os nulos):
    "{modalidade}:{dataInicial}:{dataFinal}"` e `uniqueFor = 12h`. Isso
    colapsa despachos duplicados do mesmo par modalidade+intervalo (inclusive
    os vindos do reprocessador de gaps).
-2. O mestre faz **uma única requisição** (página 1) para descobrir
-   `totalPaginas` e `totalRegistros`.
-3. Abre o ciclo de controle em dois lugares:
-   - `PncpSyncCycleTracker::start()` — contadores em Redis (24h TTL);
-   - `CicloContratacaoRecorder::start()` — linha durável em
-     `ciclos_contratacao` (Postgres), status `started`.
+2. No disparo (`SyncContratacoesJob::dispatchFor`), antes de enfileirar,
+   `CicloContratacaoRecorder::intend()` grava a linha em
+   `ciclos_contratacao` com status `started` e totais 0. O `handle` reusa
+   essa linha. Sem ela, o mestre que morre na fila ou antes da resposta do
+   PNCP não deixa gap para o reconciliador.
+3. O mestre faz **uma única requisição** (página 1) para descobrir
+   `totalPaginas` e `totalRegistros`, e preenche o total nessa mesma linha
+   (`CicloContratacaoRecorder::start()` + `PncpSyncCycleTracker::start()`
+   no Redis, TTL 24h).
 4. Dispara um `ProcessContratacaoPageJob` por página (1..N), com stagger opcional
    (`pncp.page_stagger_seconds`, default 0 — o limitador global já dita o ritmo).
-5. Resposta vazia/204 → `recordEmpty()` grava ciclo com status `empty` e
-   encerra (nenhuma página é despachada).
+5. Resposta vazia/204 → `recordEmpty()` fecha **a mesma** linha como `empty`
+   e encerra (nenhuma página é despachada).
 
 ### Transformação e persistência
 
@@ -174,7 +177,11 @@ Quando `done === total` (contadores Redis), a última página:
 
 - 429 / 5xx / timeout → `PncpFailureHandler` + circuit breaker (seção 12) →
   `release()` com a pausa do breaker + jitter. O contador do ciclo **não**
-  avança em release — só em conclusão real ou falha permanente.
+  avança em release — só em conclusão real ou falha permanente. A linha de
+  intenção, gravada no disparo, permanece `started`.
+- Mestre que esgota o `retryUntil` (12h) → `failed()` marca `abandoned` o
+  ciclo que ainda não tem total. O reconciliador de sábado/domingo pega
+  esse intervalo. Ciclo que já tem total fica com as páginas.
 - Página que esgota o `retryUntil` (12h) → `failed()` conta a página com 0
   itens; se o ciclo não fechar, marca o ciclo `abandoned` — vira gap
   reprocessável no fim de semana.
@@ -291,8 +298,11 @@ semana).
    - `status = finished` com `itens_processados < total_anunciado`, **ou**
    - `status = started` há mais de `pncp.retry_until_hours.contratacoes` (12h) —
      ciclo preso/morto sem ter fechado.
-2. O comando filtra adicionalmente `total_anunciado - itens_processados > 0`
-   e pega combinações **distintas** de (modalidade, data_inicial, data_final).
+2. O comando filtra adicionalmente itens ainda faltando
+   (`total_anunciado - itens_processados > 0`) **ou** ciclo sem total
+   anunciado (`total_anunciado = total_paginas = itens_processados = 0` —
+   a intenção gravada no disparo, que o PNCP nunca respondeu). `empty` não
+   entra. Pega combinações **distintas** de (modalidade, data_inicial, data_final).
 3. Para cada combinação, redespacha `SyncContratacoesJob` — o **mesmo** job do
    cron diário. O `uniqueId` (modalidade+intervalo) colapsa duplicatas do
    mesmo par; o upsert por `numero_controle_pncp` torna a re-listagem
@@ -313,9 +323,11 @@ mede progresso (o README reforça isso).
 ### E se a segunda sincronização também falhar
 
 O ciclo reprocessado cria uma **nova linha** em `ciclos_contratacao` (novo
-`sync_id`). Se ela também ficar em gap, será encontrada pela próxima
-execução de sábado/domingo — o mecanismo é auto-alimentado e não tem limite
-de tentativas semanais. Não há alerta ativo além dos logs
+`sync_id`), exceto quando a anterior ainda está `started` sem total: essa é
+reusada e, se a chamada ao PNCP fechar, deixa de ser gap. Se a nova também
+ficar em gap, será encontrada pela próxima execução de sábado/domingo — o
+mecanismo é auto-alimentado e não tem limite de tentativas semanais. Não há
+alerta ativo além dos logs
 (`PNCP_CONTRATACOES_CICLO_ABANDONED`, `PNCP_CONTRATACOES_PAGE_ABANDONED`).
 
 ### O que detecta vs. o que não detecta
@@ -323,19 +335,25 @@ de tentativas semanais. Não há alerta ativo além dos logs
 **Detecta:**
 - Páginas perdidas por outage/timeout (ciclo finished abaixo do anunciado).
 - Ciclos mortos no meio (abandoned / started preso).
-- Intervalos inteiros que falharam no dia (o ciclo existe desde o START).
+- Intervalos inteiros que falharam no dia, inclusive o mestre que morreu
+  antes de saber o total: a linha existe desde o disparo.
+- Dia em que o comando nem gravou linha, desde a primeira execução da
+  cobertura (`cobertura_contratacao`). Na primeira execução o piso é
+  `contratacoes_recheck_days` (7).
+- Janela já fechada nos últimos 7 dias: o reconciliador de fim de semana
+  rebusca mesmo com ciclo `finished`/`empty`, para total curto e alteração
+  que só volta pelo endpoint de atualização.
 
 **Não detecta:**
-- **Divergência de conteúdo** — um registro cujo payload mudou no PNCP mas
-  cuja página foi processada com sucesso antes da mudança (coberto
-  parcialmente pelo fato de a janela diária usar o endpoint de
-  *atualização*: a alteração re-entra pela janela do dia seguinte).
-- Registros que o PNCP **removeu** ou reclassificou de modalidade (o banco
-  local é append/upsert; nada deleta).
-- Gaps em dias em que o job mestre morreu **antes** do START (não existe
-  linha em `ciclos_contratacao` para aquele par modalidade+intervalo —
-  cego a esse modo de falha; mitigado pelo `ShouldBeUnique`/retry do mestre
-  e pelo fato de o cron rodar todo dia).
+- Alteração no PNCP mais velha que `contratacoes_recheck_days` e fora de um
+  dia que tenha ficado em gap. A janela diária de atualização pega a
+  alteração no dia em que ela acontece; se esse dia fechou certo e já saiu
+  dos 7, ela não volta.
+- Registro que o PNCP **removeu**. O banco local só faz upsert; a API de
+  atualização não avisa exclusão. Reclassificação de modalidade volta quando
+  o registro reaparece na janela rebuscada: o upsert atualiza a modalidade.
+- Dia anterior à primeira cobertura e mais velho que 7 dias, se o comando
+  nunca chegou a rodar.
 - Diferenças de contagem causadas pelo próprio PNCP anunciar
   `totalRegistros` inconsistente entre a sondagem e as páginas (falso
   positivo de gap — inócuo, pois o reprocessamento é idempotente).
