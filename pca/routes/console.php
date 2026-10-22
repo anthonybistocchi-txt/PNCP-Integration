@@ -19,6 +19,5 @@ Schedule::command('pncp:discover-unidades')->weeklyOn(0, '12:10');
 // cauda de um lote cheio esperava mais que as 12h antigas e morria sem ser tentada.
 Schedule::command('pncp:sync-pca')->days([1, 4])->at('00:00');
 
-// Reprocessa só o que faltou (plano cujo ciclo morreu ou ficou incompleto),
-// sem relistar órgãos. Barato: uma consulta ao banco + despacho limitado.
+// Reprocessa plano com item pendente e listagem de órgão que morreu.
 Schedule::command('pncp:sync-pca-faltantes')->dailyAt('06:00');

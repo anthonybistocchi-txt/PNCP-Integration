@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Console;
 
+use App\Jobs\Pca\SyncPcaDataJob;
 use App\Jobs\Pca\SyncPcaItemsJob;
 use App\Models\Pca\PcaPlan;
 use App\Models\Pca\PncpPcaCiclo;
@@ -80,6 +81,53 @@ class SyncPcaFaltantesCommandTest extends TestCase
         $this->artisan('pncp:sync-pca-faltantes', ['--ano' => 2026, '--limit' => 1])->assertSuccessful();
 
         $this->assertSame([2], $this->dispatchedSequencials());
+    }
+
+    public function test_retries_an_organ_whose_latest_listing_died(): void
+    {
+        Bus::fake();
+
+        PncpPcaCiclo::create([
+            'sync_id'    => (string) Str::uuid(),
+            'cnpj_orgao' => self::CNPJ,
+            'ano_pca'    => 2026,
+            'status'     => 'abandoned',
+            'started_at' => now()->subDays(4),
+            'finished_at' => now()->subDays(4),
+        ]);
+
+        $this->artisan('pncp:sync-pca-faltantes', ['--ano' => 2026])->assertSuccessful();
+
+        Bus::assertDispatched(SyncPcaDataJob::class, function (SyncPcaDataJob $job)
+        {
+            return (fn () => $this->dto->cnpj)->call($job) === self::CNPJ;
+        });
+    }
+
+    public function test_a_later_finished_listing_is_not_retried(): void
+    {
+        Bus::fake();
+
+        PncpPcaCiclo::create([
+            'sync_id'    => (string) Str::uuid(),
+            'cnpj_orgao' => self::CNPJ,
+            'ano_pca'    => 2026,
+            'status'     => 'abandoned',
+            'started_at' => now()->subDays(5),
+            'finished_at' => now()->subDays(5),
+        ]);
+        PncpPcaCiclo::create([
+            'sync_id'    => (string) Str::uuid(),
+            'cnpj_orgao' => self::CNPJ,
+            'ano_pca'    => 2026,
+            'status'     => 'finished',
+            'started_at' => now()->subDays(1),
+            'finished_at' => now()->subDay(),
+        ]);
+
+        $this->artisan('pncp:sync-pca-faltantes', ['--ano' => 2026])->assertSuccessful();
+
+        Bus::assertNotDispatched(SyncPcaDataJob::class);
     }
 
     public function test_filters_by_cnpj()

@@ -182,6 +182,44 @@ class PncpPcaCicloRepository
     }
 
     /**
+     * Órgãos cujo último ciclo de listagem (sem sequencial) morreu.
+     * Um ciclo finished ou empty mais novo tira o órgão da lista.
+     *
+     * @return Collection<int, PncpPcaCiclo>
+     */
+    public function orgaosComListagemEmGap(int $ano, ?string $cnpj, int $retryHours): Collection
+    {
+        $limite = now()->subHours($retryHours);
+
+        $ids = PncpPcaCiclo::query()
+            ->selectRaw('max(id) as id')
+            ->whereNull('sequencial_pca')
+            ->where('ano_pca', $ano)
+            ->when($cnpj, fn ($query, $cnpj) => $query->where('cnpj_orgao', $cnpj))
+            ->groupBy('cnpj_orgao')
+            ->pluck('id');
+
+        if ($ids->isEmpty())
+        {
+            return collect();
+        }
+
+        return PncpPcaCiclo::query()
+            ->whereIn('id', $ids->all())
+            ->where(function ($query) use ($limite)
+            {
+                $query->where('status', PncpPcaCiclo::STATUS_ABANDONED)
+                    ->orWhere(function ($started) use ($limite)
+                    {
+                        $started->where('status', PncpPcaCiclo::STATUS_STARTED)
+                            ->where('started_at', '<=', $limite);
+                    });
+            })
+            ->orderBy('cnpj_orgao')
+            ->get(['cnpj_orgao', 'ano_pca']);
+    }
+
+    /**
      * Resumo histórico de ciclos de plano em gap, agrupado por status.
      * Pode incluir ciclos antigos de planos já recuperados depois.
      */

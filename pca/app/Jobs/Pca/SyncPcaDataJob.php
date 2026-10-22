@@ -7,6 +7,7 @@ use App\DTOs\Pca\PcaPlanData;
 use App\DTOs\Pca\PcaSyncParamsDTO;
 use App\Integrations\PNCP\PncpCircuitBreaker;
 use App\Integrations\PNCP\PncpClient;
+use App\Models\Pca\PncpPcaCiclo;
 use App\Repositories\Orgaos\OrgaoRepository;
 use App\Repositories\Pca\PcaPlanRepository;
 use App\Repositories\Pca\PncpPcaCicloRepository;
@@ -46,6 +47,45 @@ class SyncPcaDataJob implements ShouldQueue, ShouldBeUnique
         protected PcaSyncParamsDTO $dto
     ) {
         $this->syncId = (string) Str::uuid();
+    }
+
+    public function syncId(): string
+    {
+        return $this->syncId;
+    }
+
+    /**
+     * Grava o ciclo do órgão antes de enfileirar. Listagem que morre sem
+     * chamar o PNCP fica visível para o sync-pca-faltantes no dia seguinte,
+     * em vez de esperar a próxima segunda ou quinta.
+     */
+    public static function dispatchFor(PcaSyncParamsDTO $dto): void
+    {
+        $retryHours = (int) config('pncp.retry_until_hours.pca', 72);
+
+        $emAndamento = PncpPcaCiclo::query()
+            ->whereNull('sequencial_pca')
+            ->where('cnpj_orgao', $dto->cnpj)
+            ->where('ano_pca', $dto->ano)
+            ->where('status', PncpPcaCiclo::STATUS_STARTED)
+            ->where('started_at', '>', now()->subHours($retryHours))
+            ->exists();
+
+        if ($emAndamento)
+        {
+            return;
+        }
+
+        $job = new self($dto);
+
+        app(PncpPcaCicloRepository::class)->createOrgaoStarted(
+            $job->syncId(),
+            $dto->cnpj,
+            $dto->ano,
+            now()
+        );
+
+        dispatch($job);
     }
 
     public function uniqueId(): string
@@ -88,6 +128,10 @@ class SyncPcaDataJob implements ShouldQueue, ShouldBeUnique
 
         $startedAt = now();
 
+        // Antes da chamada ao PNCP. Se o mestre morrer na fila, o ciclo já
+        // existe e o sync-pca-faltantes redespacha o órgão.
+        $ciclos->createOrgaoStarted($this->syncId, $this->dto->cnpj, $this->dto->ano, $startedAt);
+
         if ($failureHandler->shouldWait($this, 'Job Mestre PCA', PncpCircuitBreaker::SCOPE_PCA))
         {
             return;
@@ -106,15 +150,10 @@ class SyncPcaDataJob implements ShouldQueue, ShouldBeUnique
                 // Órgão sem nenhum PCA no ano (404 do PNCP): lembra disso para
                 // o SyncPcaCommand não gastar uma requisição por rodada nele.
                 $orgaos->markPcaVerified($this->dto->cnpj, $this->dto->ano, false);
+                $ciclos->markEmpty($this->syncId);
 
-                // Log::info('PNCP_PCA_FINISHED_EMPTY', [
-                //     'cnpj' => $this->dto->cnpj,
-                //     'ano'  => $this->dto->ano,
-                // ]);
                 return;
             }
-
-            $ciclos->createOrgaoStarted($this->syncId, $this->dto->cnpj, $this->dto->ano, $startedAt);
 
             $plans = [];
             foreach ($pcaUnidadesOrgaos as $pca)

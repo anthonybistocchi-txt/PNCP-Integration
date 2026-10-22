@@ -47,7 +47,8 @@ class SyncPcaDataJobTest extends TestCase
             $this->app->make(PncpPcaCicloRepository::class),
         );
 
-        $this->assertDatabaseCount('ciclos_pca', 0);
+        $this->assertDatabaseCount('ciclos_pca', 1);
+        $this->assertSame('empty', PncpPcaCiclo::query()->value('status'));
     }
 
     public function test_organ_without_pca_is_remembered_as_empty()

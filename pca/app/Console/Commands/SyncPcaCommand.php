@@ -43,7 +43,7 @@ class SyncPcaCommand extends Command
                 cnpj: $orgao->cnpj,
             );
 
-            SyncPcaDataJob::dispatch($dto);
+            SyncPcaDataJob::dispatchFor($dto);
         }
 
         $this->info('Jobs despachados com sucesso. O processamento ocorrerá em background.');

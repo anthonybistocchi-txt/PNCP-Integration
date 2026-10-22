@@ -2,6 +2,8 @@
 
 namespace App\Console\Commands;
 
+use App\DTOs\Pca\PcaSyncParamsDTO;
+use App\Jobs\Pca\SyncPcaDataJob;
 use App\Jobs\Pca\SyncPcaItemsJob;
 use App\Repositories\Pca\PcaPlanRepository;
 use App\Repositories\Pca\PncpPcaCicloRepository;
@@ -126,6 +128,7 @@ class SyncPcaFaltantesCommand extends Command
         }
 
         $this->reportGaps($ciclos, $ano, $cnpj, $retryHours);
+        $this->redispararListagens($ciclos, $ano, $cnpj, $retryHours, $dryRun);
 
         if ($dryRun)
         {
@@ -142,6 +145,44 @@ class SyncPcaFaltantesCommand extends Command
         }
 
         return self::SUCCESS;
+    }
+
+    /**
+     * Listagem de órgão que morreu antes de terminar. O sync completo só roda
+     * segunda e quinta; aqui o órgão volta no dia seguinte.
+     */
+    private function redispararListagens(
+        PncpPcaCicloRepository $ciclos,
+        int $ano,
+        ?string $cnpj,
+        int $retryHours,
+        bool $dryRun
+    ): void {
+        $orgaos = $ciclos->orgaosComListagemEmGap($ano, $cnpj, $retryHours);
+
+        if ($orgaos->isEmpty())
+        {
+            $this->line('Nenhuma listagem de órgão em gap.');
+
+            return;
+        }
+
+        $this->info("Listagens de órgão em gap: {$orgaos->count()}.");
+
+        if ($dryRun)
+        {
+            return;
+        }
+
+        foreach ($orgaos as $orgao)
+        {
+            SyncPcaDataJob::dispatchFor(new PcaSyncParamsDTO(
+                ano: (int) $orgao->ano_pca,
+                cnpj: $orgao->cnpj_orgao,
+            ));
+        }
+
+        $this->info("Despachadas {$orgaos->count()} listagem(ns) de órgão.");
     }
 
     /**
